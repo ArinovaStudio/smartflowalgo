@@ -511,7 +511,7 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
             />            
             
 <div className="space-y-2">
-<div className="space-y-2">
+{/* <div className="space-y-2">
   <label className="text-sm font-medium">
     {FIELD_LABELS.version}
   </label>
@@ -523,7 +523,7 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
     error={errors.version}
     onChange={(value) => updateField("version", value)}
   />
-</div>
+</div> */}
   {errors.version && (
     <p className="text-sm text-destructive">
       {errors.version}
