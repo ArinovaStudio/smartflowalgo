@@ -246,7 +246,7 @@ export default function LeadsTable({
             {leads.map((lead) => (
               <tr
                 key={lead.id}
-                className="text-slate-200 hover:bg-white/[0.02]"
+                className="group text-slate-200 hover:bg-white/[0.02]"
               >
                 <td className="px-4 py-3 text-slate-400">{lead.srn}</td>
                 <td className="px-4 py-3 font-medium text-white">
@@ -257,7 +257,7 @@ export default function LeadsTable({
                     <span>{lead.tradingViewId}</span>
                     <button
                       onClick={() => handleCopy(lead.tradingViewId as string)}
-                      className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors focus:outline-none"
+                      className="p-1 opacity-0 group-hover:opacity-100 transition-all rounded text-slate-500 hover:text-slate-200 hover:bg-slate-800 cursor-pointer focus:outline-none"
                       title="Copy to clipboard"
                     >
                       {copiedId === lead.tradingViewId ? (
@@ -279,18 +279,13 @@ export default function LeadsTable({
                       ) : (
                         // Copy Icon (Default state)
                         <svg
-                          xmlns="http://w3.org"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          strokeWidth={2}
-                          stroke="currentColor"
-                          className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="16"
+                          height="16"
+                          fill="currentColor"
+                          viewBox="0 0 256 256"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376A8.965 8.965 0 0012 12.75c-.497 0-.982.04-1.455.12l-.104.022m.754-.114l.893-.892a4.5 4.5 0 016.364 0l1.457 1.457a4.5 4.5 0 010 6.364l-5.316 5.316a4.5 4.5 0 01-6.364 0l-1.457-1.457a4.5 4.5 0 010-6.364l.892-.893m0 0l-.104.022t.05-.078"
-                          />
+                          <path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"></path>
                         </svg>
                       )}
                     </button>
