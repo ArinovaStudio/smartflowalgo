@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import PaymentsModal from "./PaymentModel";
 
-type AccType = "FREE" | "PAID" 
+type AccType = "FREE" | "PAID";
 export interface Lead {
   srn: number;
   id: string;
@@ -24,7 +24,7 @@ export interface Lead {
   email: string;
   planType?: AccType;
   createdAt: string; // ISO string
-  version?: string
+  version?: string;
 }
 
 interface Pagination {
@@ -44,7 +44,11 @@ interface LeadsTableProps {
   pageSize: number;
 }
 
-export default function LeadsTable({ initialData, initialTotal, pageSize }: LeadsTableProps) {
+export default function LeadsTable({
+  initialData,
+  initialTotal,
+  pageSize,
+}: LeadsTableProps) {
   const [leads, setLeads] = useState<Lead[]>(initialData);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
@@ -61,17 +65,32 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
   const [order, setOrder] = useState<SortOrder>("desc");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(text);
+      setTimeout(() => setCopiedId(null), 2000); // Reset icon after 2 seconds
+    } catch (err) {
+      console.error("Failed to copy text: ", err);
+    }
+  };
   // Which lead's payments modal is open, if any.
-  const [paymentsFor, setPaymentsFor] = useState<{ id: string; name: string } | null>(null);
+  const [paymentsFor, setPaymentsFor] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
-  const isFirstRun = useRef(true);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debounce the search box so we're not firing a request per keystroke.
   useEffect(() => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    debounceTimer.current = setTimeout(
+      () => setDebouncedSearch(search.trim()),
+      350,
+    );
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
@@ -124,17 +143,23 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
     }
   }
 
-  const rangeStart = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
-  const rangeEnd = Math.min(pagination.page * pagination.pageSize, pagination.total);
+  const rangeStart =
+    pagination.total === 0
+      ? 0
+      : (pagination.page - 1) * pagination.pageSize + 1;
+  const rangeEnd = Math.min(
+    pagination.page * pagination.pageSize,
+    pagination.total,
+  );
 
   const deleteUser = async (id: string) => {
     setLoading(true);
     const del = await fetch(`/api/save-data?id=${id}`, {
       method: "DELETE",
     });
-    const data = await del.json()
+    const data = await del.json();
     console.log(data);
-    
+
     if (del.ok) {
       window.location.reload();
       setLoading(false);
@@ -195,7 +220,13 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
           <thead>
             <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-slate-400">
               <th className="px-4 py-3 font-medium">S No.</th>
-              <SortableHeader label="Name" field="name" sortBy={sortBy} order={order} onSort={toggleSort} />
+              <SortableHeader
+                label="Name"
+                field="name"
+                sortBy={sortBy}
+                order={order}
+                onSort={toggleSort}
+              />
               <th className="px-4 py-3 font-medium">TradingView ID</th>
               <th className="px-4 py-3 font-medium">Version</th>
               <th className="px-4 py-3 font-medium">Mobile</th>
@@ -213,10 +244,58 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
           </thead>
           <tbody className="divide-y divide-white/5">
             {leads.map((lead) => (
-              <tr key={lead.id} className="text-slate-200 hover:bg-white/[0.02]">
+              <tr
+                key={lead.id}
+                className="text-slate-200 hover:bg-white/[0.02]"
+              >
                 <td className="px-4 py-3 text-slate-400">{lead.srn}</td>
-                <td className="px-4 py-3 font-medium text-white">{lead.name}</td>
-                <td className="px-4 py-3 text-slate-400">{lead.tradingViewId}</td>
+                <td className="px-4 py-3 font-medium text-white">
+                  {lead.name}
+                </td>
+                <td className="px-4 py-3 text-slate-400">
+                  <div className="flex items-center gap-2 group justify-between">
+                    <span>{lead.tradingViewId}</span>
+                    <button
+                      onClick={() => handleCopy(lead.tradingViewId as string)}
+                      className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors focus:outline-none"
+                      title="Copy to clipboard"
+                    >
+                      {copiedId === lead.tradingViewId ? (
+                        // Checkmark Icon (Success state)
+                        <svg
+                          xmlns="http://w3.org"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth={2}
+                          stroke="currentColor"
+                          className="w-4 h-4 text-emerald-500"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M4.5 12.75l6 6 9-13.5"
+                          />
+                        </svg>
+                      ) : (
+                        // Copy Icon (Default state)
+                        <svg
+                          xmlns="http://w3.org"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth={2}
+                          stroke="currentColor"
+                          className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376A8.965 8.965 0 0012 12.75c-.497 0-.982.04-1.455.12l-.104.022m.754-.114l.893-.892a4.5 4.5 0 016.364 0l1.457 1.457a4.5 4.5 0 010 6.364l-5.316 5.316a4.5 4.5 0 01-6.364 0l-1.457-1.457a4.5 4.5 0 010-6.364l.892-.893m0 0l-.104.022t.05-.078"
+                          />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </td>
                 <td className="px-4 py-3 text-slate-400">{lead.version}</td>
                 <td className="px-4 py-3 text-slate-400">{lead.mobile}</td>
                 <td className="px-4 py-3 text-slate-400">{lead.email}</td>
@@ -243,7 +322,9 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setPaymentsFor({ id: lead.id, name: lead.name })}
+                      onClick={() =>
+                        setPaymentsFor({ id: lead.id, name: lead.name })
+                      }
                       title="View payments"
                       className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-slate-400 transition hover:border-sky-500/30 hover:text-sky-300"
                     >
@@ -263,7 +344,10 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
 
             {!loading && leads.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                <td
+                  colSpan={7}
+                  className="px-4 py-10 text-center text-slate-500"
+                >
                   No leads match your filters.
                 </td>
               </tr>
@@ -292,7 +376,9 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
             Page {pagination.page} of {pagination.totalPages}
           </span>
           <button
-            onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
+            onClick={() =>
+              setPage((p) => Math.min(pagination.totalPages, p + 1))
+            }
             disabled={pagination.page >= pagination.totalPages || loading}
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-slate-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -339,8 +425,12 @@ function SortableHeader({
         }`}
       >
         {label}
-        <ArrowUpDown className={`h-3 w-3 ${active ? "opacity-100" : "opacity-40"}`} />
-        {active && <span className="text-[10px]">{order === "asc" ? "↑" : "↓"}</span>}
+        <ArrowUpDown
+          className={`h-3 w-3 ${active ? "opacity-100" : "opacity-40"}`}
+        />
+        {active && (
+          <span className="text-[10px]">{order === "asc" ? "↑" : "↓"}</span>
+        )}
       </button>
     </th>
   );

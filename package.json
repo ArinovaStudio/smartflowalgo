@@ -20,6 +20,7 @@
     "@sumup/sdk": "^0.1.7",
     "@types/nodemailer": "^8.0.1",
     "ai-studio-applet": ".",
+    "ai-studio-applet": ".",
     "autoprefixer": "^10.4.21",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
