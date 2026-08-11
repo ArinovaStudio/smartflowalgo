@@ -60,7 +60,8 @@ function Rigester() {
       } else {
         setRegisterSubmitted(true);
         setTimeout(() => {
-          router.push("/simulator");
+          // New users are always CLIENT — go to user dashboard
+          router.push("/user");
           router.refresh();
         }, 1200);
       }
@@ -113,10 +114,10 @@ function Rigester() {
               Welcome to Smartflow Trading education circles! Redirecting to your trading dashboard...
             </p>
             <button
-              onClick={() => router.push("/simulator")}
+              onClick={() => router.push("/user")}
               className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow cursor-pointer"
             >
-              Proceed to Simulator Sandbox
+              Go to Dashboard
             </button>
           </div>
         ) : (

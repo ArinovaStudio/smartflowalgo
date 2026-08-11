@@ -41,7 +41,7 @@ type FormState = {
   email: string;
   tradingViewId: string;
   id?: string;
-  discount: number
+  discount: number;
 };
 
 type ReferralPayment = {
@@ -62,11 +62,15 @@ type ReferralPayment = {
 const EMPTY_FORM: FormState = { name: "", mobile: "", email: "", tradingViewId: "", id: "", discount: 0 };
 
 const STATUS_STYLES: Record<string, string> = {
-  PAID: "bg-emerald-500/10 text-emerald-400",
-  PENDING: "bg-amber-500/10 text-amber-400",
-  FAILED: "bg-red-500/10 text-red-400",
-  CANCELLED: "bg-slate-500/10 text-slate-400",
+  PAID: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  PENDING: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  FAILED: "bg-red-500/10 text-red-600 dark:text-red-400",
+  CANCELLED: "bg-slate-100 dark:bg-slate-500/10 text-slate-500 dark:text-slate-400",
 };
+
+// Shared input classes for modal fields
+const inputCls =
+  "w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500/30";
 
 export default function PromotersTable({ initialData, initialTotal, pageSize }: PromotersTableProps) {
   const [data, setData] = useState<Promoter[]>(initialData);
@@ -133,7 +137,6 @@ export default function PromotersTable({ initialData, initialTotal, pageSize }: 
     e.preventDefault();
     setFormError(null);
     if (!validate()) return;
-
     setSubmitting(true);
     try {
       const res = await fetch("/api/promoters", {
@@ -145,22 +148,17 @@ export default function PromotersTable({ initialData, initialTotal, pageSize }: 
           email: form.email.trim(),
           tradingViewId: form.tradingViewId.trim() || undefined,
           discount: Number(form.discount) || 0,
-          id: form.id
+          id: form.id,
         }),
       });
-
       const json = await res.json();
-
       if (!res.ok) {
         setFormError(typeof json.error === "string" ? json.error : "Please check the form and try again.");
         return;
       }
-
       setModalOpen(false);
       setForm(EMPTY_FORM);
-      if (page === 1) {
-        setData((prev) => [json.data, ...prev].slice(0, pageSize));
-      }
+      if (page === 1) setData((prev) => [json.data, ...prev].slice(0, pageSize));
       setTotal((prev) => prev + 1);
     } catch (err) {
       console.error(err);
@@ -176,17 +174,10 @@ export default function PromotersTable({ initialData, initialTotal, pageSize }: 
     setReferralsLoading(true);
     setReferralsError(null);
     setReferralsData([]);
-
     try {
       const res = await fetch(`/api/promoters/${promoter.id}`);
       const json = await res.json();
-
-      if (!res.ok) {
-        setReferralsError(typeof json.error === "string" ? json.error : "Failed to load referrals");
-        return;
-      }
-      console.log(json.data.referrals);
-      
+      if (!res.ok) { setReferralsError(typeof json.error === "string" ? json.error : "Failed to load referrals"); return; }
       setReferralsData(json.data.referrals);
     } catch (err) {
       console.error(err);
@@ -198,29 +189,26 @@ export default function PromotersTable({ initialData, initialTotal, pageSize }: 
 
   return (
     <div>
+      {/* Header row */}
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
           {total} {total === 1 ? "promoter" : "promoters"} total
         </p>
         <button
           type="button"
-          onClick={() => {
-            setForm(EMPTY_FORM);
-            setFormErrors({});
-            setFormError(null);
-            setModalOpen(true);
-          }}
-          className="inline-flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-400"
+          onClick={() => { setForm(EMPTY_FORM); setFormErrors({}); setFormError(null); setModalOpen(true); }}
+          className="inline-flex items-center gap-2 rounded-lg bg-sky-500 hover:bg-sky-400 px-4 py-2 text-sm font-medium text-white transition-colors"
         >
           <Plus className="h-4 w-4" />
           Add Influencer
         </button>
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-xl border border-slate-800">
+      {/* Table card */}
+      <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-900/60 text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 dark:bg-slate-900/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-500 border-b border-slate-200 dark:border-slate-800">
               <tr>
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">ID</th>
@@ -233,46 +221,44 @@ export default function PromotersTable({ initialData, initialTotal, pageSize }: 
                 <th className="px-4 py-3 font-medium text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {data.map((promoter) => (
-                <tr key={promoter.id} className="text-slate-300 hover:bg-slate-900/40">
-                  <td className="px-4 py-3 font-medium text-white">{promoter.name}</td>
+                <tr key={promoter.id} className="text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                  <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">{promoter.name}</td>
                   <td className="px-4 py-3">
                     <button
                       type="button"
                       onClick={() => handleCopy(promoter.id)}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300 transition-colors hover:border-sky-500/50 hover:text-white"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2 py-1 font-mono text-xs text-slate-600 dark:text-slate-300 transition-colors hover:border-sky-500/50 hover:text-slate-900 dark:hover:text-white"
                       title="Click to copy"
                     >
                       {promoter.id}
-                      {copiedId === promoter.id ? (
-                        <Check className="h-3 w-3 text-emerald-400" />
-                      ) : (
-                        <Copy className="h-3 w-3 text-slate-500" />
-                      )}
+                      {copiedId === promoter.id
+                        ? <Check className="h-3 w-3 text-emerald-500" />
+                        : <Copy className="h-3 w-3 text-slate-400 dark:text-slate-500" />}
                     </button>
                   </td>
                   <td className="px-4 py-3">{promoter.mobile}</td>
                   <td className="px-4 py-3">{promoter.email}</td>
                   <td className="px-4 py-3">{promoter.tradingViewId ?? "—"}</td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center rounded-full bg-sky-500/10 px-2.5 py-0.5 text-xs font-medium text-sky-400">
+                    <span className="inline-flex items-center rounded-full bg-sky-500/10 px-2.5 py-0.5 text-xs font-medium text-sky-600 dark:text-sky-400">
                       {promoter.referralCount}
                     </span>
                   </td>
-                                    <td className="px-4 py-3">
-                    <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium text-sky-400">
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium text-sky-600 dark:text-sky-400">
                       {promoter.discount ?? 0}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-400">
+                  <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
                     {new Date(promoter.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button
                       type="button"
                       onClick={() => handleViewReferrals(promoter)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-sky-500/50 hover:text-white"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors hover:border-sky-500/50 hover:text-sky-600 dark:hover:text-white"
                     >
                       <Eye className="h-3.5 w-3.5" />
                       View Referrals
@@ -283,8 +269,8 @@ export default function PromotersTable({ initialData, initialTotal, pageSize }: 
 
               {data.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
-                    <Megaphone className="mx-auto mb-2 h-6 w-6 text-slate-700" />
+                  <td colSpan={8} className="px-4 py-12 text-center text-slate-400 dark:text-slate-500">
+                    <Megaphone className="mx-auto mb-2 h-6 w-6 text-slate-300 dark:text-slate-700" />
                     No promoters yet.
                   </td>
                 </tr>
@@ -294,40 +280,30 @@ export default function PromotersTable({ initialData, initialTotal, pageSize }: 
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
-        <span>
-          Page {page} of {totalPages}
-        </span>
+      {/* Pagination */}
+      <div className="mt-4 flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
+        <span>Page {page} of {totalPages}</span>
         <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={page <= 1 || loading}
-            onClick={() => loadPage(page - 1)}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-800 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40 hover:border-slate-700 hover:text-white"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Prev
-          </button>
-          <button
-            type="button"
-            disabled={page >= totalPages || loading}
-            onClick={() => loadPage(page + 1)}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-800 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40 hover:border-slate-700 hover:text-white"
-          >
-            Next
-            <ChevronRight className="h-4 w-4" />
-          </button>
+          {[
+            { label: "Prev", icon: ChevronLeft, action: () => loadPage(page - 1), disabled: page <= 1 || loading, left: true },
+            { label: "Next", icon: ChevronRight, action: () => loadPage(page + 1), disabled: page >= totalPages || loading, left: false },
+          ].map(({ label, icon: Icon, action, disabled, left }) => (
+            <button key={label} type="button" disabled={disabled} onClick={action}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-1.5 text-slate-600 dark:text-slate-300 disabled:cursor-not-allowed disabled:opacity-40 hover:border-slate-300 dark:hover:border-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors">
+              {left && <Icon className="h-4 w-4" />}
+              {label}
+              {!left && <Icon className="h-4 w-4" />}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Add Influencer modal */}
+      {/* ── Add Influencer Modal ── */}
       <AnimatePresence>
         {modalOpen && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 dark:bg-black/70 p-4"
             onClick={() => !submitting && setModalOpen(false)}
           >
             <motion.div
@@ -336,114 +312,53 @@ export default function PromotersTable({ initialData, initialTotal, pageSize }: 
               exit={{ opacity: 0, y: 12, scale: 0.98 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-950 p-6 shadow-2xl"
+              className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-6 shadow-2xl"
             >
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-white">Add Influencer</h2>
-                <button
-                  type="button"
-                  onClick={() => !submitting && setModalOpen(false)}
-                  className="rounded-md p-1 text-slate-500 hover:bg-slate-900 hover:text-white"
-                  aria-label="Close"
-                >
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Add Influencer</h2>
+                <button type="button" onClick={() => !submitting && setModalOpen(false)}
+                  className="rounded-md p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-600 dark:hover:text-white" aria-label="Close">
                   <X className="h-4 w-4" />
                 </button>
               </div>
 
               <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-400">Referral code</label>
-                  <input
-                    type="text"
-                    value={form.id}
-                    onChange={(e) => updateField("id", e.target.value)}
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-sky-500 focus:outline-none"
-                    placeholder="TTY10"
-                  />
-                  {formErrors.id && <p className="mt-1 text-xs text-red-400">{formErrors.id}</p>}
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-400">Discount Percentage</label>
-                  <input
-                    type="number"
-                    value={form.discount}
-                    onChange={(e) => updateField("discount", e.target.value)}
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-sky-500 focus:outline-none"
-                    placeholder="TTY10"
-                  />
-                  {formErrors.discount && <p className="mt-1 text-xs text-red-400">{formErrors.discount}</p>}
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-400">Name</label>
-                  <input
-                    type="text"
-                    value={form.name}
-                    onChange={(e) => updateField("name", e.target.value)}
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-sky-500 focus:outline-none"
-                    placeholder="Jane Doe"
-                  />
-                  {formErrors.name && <p className="mt-1 text-xs text-red-400">{formErrors.name}</p>}
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-400">Mobile</label>
-                  <input
-                    type="tel"
-                    value={form.mobile}
-                    onChange={(e) => updateField("mobile", e.target.value)}
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-sky-500 focus:outline-none"
-                    placeholder="+91 98765 43210"
-                  />
-                  {formErrors.mobile && <p className="mt-1 text-xs text-red-400">{formErrors.mobile}</p>}
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-400">Email</label>
-                  <input
-                    type="email"
-                    value={form.email}
-                    onChange={(e) => updateField("email", e.target.value)}
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-sky-500 focus:outline-none"
-                    placeholder="jane@example.com"
-                  />
-                  {formErrors.email && <p className="mt-1 text-xs text-red-400">{formErrors.email}</p>}
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-400">
-                    TradingView ID <span className="text-slate-600">(optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={form.tradingViewId}
-                    onChange={(e) => updateField("tradingViewId", e.target.value)}
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-sky-500 focus:outline-none"
-                    placeholder="tv_username"
-                  />
-                </div>
+                {[
+                  { field: "id" as keyof FormState, label: "Referral code", type: "text", placeholder: "TTY10" },
+                  { field: "discount" as keyof FormState, label: "Discount Percentage", type: "number", placeholder: "10" },
+                  { field: "name" as keyof FormState, label: "Name", type: "text", placeholder: "Jane Doe" },
+                  { field: "mobile" as keyof FormState, label: "Mobile", type: "tel", placeholder: "+91 98765 43210" },
+                  { field: "email" as keyof FormState, label: "Email", type: "email", placeholder: "jane@example.com" },
+                  { field: "tradingViewId" as keyof FormState, label: "TradingView ID", type: "text", placeholder: "tv_username", optional: true },
+                ].map(({ field, label, type, placeholder, optional }) => (
+                  <div key={field}>
+                    <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {label} {optional && <span className="text-slate-400 dark:text-slate-600">(optional)</span>}
+                    </label>
+                    <input
+                      type={type}
+                      value={String(form[field] ?? "")}
+                      onChange={(e) => updateField(field, e.target.value)}
+                      className={inputCls}
+                      placeholder={placeholder}
+                    />
+                    {formErrors[field] && <p className="mt-1 text-xs text-red-500">{formErrors[field]}</p>}
+                  </div>
+                ))}
 
                 {formError && (
-                  <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+                  <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-500 dark:text-red-400">
                     {formError}
                   </div>
                 )}
 
                 <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setModalOpen(false)}
-                    disabled={submitting}
-                    className="rounded-lg px-4 py-2 text-sm font-medium text-slate-400 hover:text-white disabled:opacity-40"
-                  >
+                  <button type="button" onClick={() => setModalOpen(false)} disabled={submitting}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white disabled:opacity-40">
                     Cancel
                   </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="inline-flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
+                  <button type="submit" disabled={submitting}
+                    className="inline-flex items-center gap-2 rounded-lg bg-sky-500 hover:bg-sky-400 px-4 py-2 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-60">
                     {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                     {submitting ? "Adding..." : "Add Influencer"}
                   </button>
@@ -454,14 +369,12 @@ export default function PromotersTable({ initialData, initialTotal, pageSize }: 
         )}
       </AnimatePresence>
 
-      {/* View Referrals modal */}
+      {/* ── View Referrals Modal ── */}
       <AnimatePresence>
         {referralsModalOpen && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 dark:bg-black/70 p-4"
             onClick={() => setReferralsModalOpen(false)}
           >
             <motion.div
@@ -470,55 +383,45 @@ export default function PromotersTable({ initialData, initialTotal, pageSize }: 
               exit={{ opacity: 0, y: 12, scale: 0.98 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
               onClick={(e) => e.stopPropagation()}
-              className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl"
+              className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-2xl"
             >
-              <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-6 py-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-white">Referrals</h2>
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Referrals</h2>
                   {referralsPromoter && (
                     <p className="mt-0.5 text-xs text-slate-500">{referralsPromoter.name}</p>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setReferralsModalOpen(false)}
-                  className="rounded-md p-1 text-slate-500 hover:bg-slate-900 hover:text-white"
-                  aria-label="Close"
-                >
+                <button type="button" onClick={() => setReferralsModalOpen(false)}
+                  className="rounded-md p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-600 dark:hover:text-white" aria-label="Close">
                   <X className="h-4 w-4" />
                 </button>
               </div>
 
               <div className="flex-1 overflow-y-auto px-6 py-4">
                 {referralsLoading && (
-                  <div className="flex items-center justify-center py-12 text-slate-500">
+                  <div className="flex items-center justify-center py-12 text-slate-400">
                     <Loader2 className="h-5 w-5 animate-spin" />
                   </div>
                 )}
-
                 {!referralsLoading && referralsError && (
-                  <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+                  <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-500 dark:text-red-400">
                     {referralsError}
                   </div>
                 )}
-
                 {!referralsLoading && !referralsError && referralsData.length === 0 && (
-                  <div className="py-12 text-center text-slate-500">
-                    <Users className="mx-auto mb-2 h-6 w-6 text-slate-700" />
+                  <div className="py-12 text-center text-slate-400 dark:text-slate-500">
+                    <Users className="mx-auto mb-2 h-6 w-6 text-slate-300 dark:text-slate-700" />
                     <p className="text-sm">No referrals yet.</p>
                   </div>
                 )}
-
                 {!referralsLoading && !referralsError && referralsData.length > 0 && (
                   <ul className="space-y-2">
                     {referralsData.map((payment) => (
-                      <li
-                        key={payment.id}
-                        className="rounded-lg border border-slate-800 bg-slate-900/40 px-4 py-3"
-                      >
+                      <li key={payment.id} className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 px-4 py-3">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-medium text-white">
+                            <p className="text-sm font-medium text-slate-900 dark:text-white">
                               {payment.user?.name ?? "Unknown user"}
                             </p>
                             {payment.user && (
@@ -527,18 +430,12 @@ export default function PromotersTable({ initialData, initialTotal, pageSize }: 
                               </p>
                             )}
                           </div>
-                          <span
-                            className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                              STATUS_STYLES[payment.status] ?? "bg-slate-500/10 text-slate-400"
-                            }`}
-                          >
+                          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[payment.status] ?? "bg-slate-100 dark:bg-slate-500/10 text-slate-500 dark:text-slate-400"}`}>
                             {payment.status}
                           </span>
                         </div>
                         <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-                          <span>
-                            {payment.currency} {payment.amount} • {payment.user?.tradingViewId}
-                          </span>
+                          <span>{payment.currency} {payment.amount} • {payment.user?.tradingViewId}</span>
                           <span>{new Date(payment.createdAt).toLocaleString()}</span>
                         </div>
                       </li>

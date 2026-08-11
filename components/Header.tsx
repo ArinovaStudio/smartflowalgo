@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Menu, X, Send, LogIn, ChevronRight, Sparkles, LogOut, User } from "lucide-react";
 import Logo from "./Logo";
 import ThemeToggle from "./ThemeToggle";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { getToken } from "@/lib/plan-token";
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
@@ -21,8 +21,12 @@ export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activePage, setActivePage] = useState(navItems[0].page);
   const router = useRouter();
+  const pathname = usePathname();
   const [theme, setTheme] = useState<theme>("dark");
   const { data: session, status } = useSession();
+
+  // Hide the public navbar entirely inside the admin panel
+  if (pathname?.startsWith("/admin")) return null;
 
   const onThemeChange = () => {
     let newTheme: theme = "dark";

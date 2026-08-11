@@ -1,15 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, type Variants } from "framer-motion";
 import {
   Sparkles,
   Zap,
   CheckCircle2,
-  ShieldCheck,
   Globe,
   TrendingUp,
-  Flame,
   Bot,
   Gift,
   Clock,
@@ -18,19 +16,42 @@ import {
   Radio,
   Map,
   Activity,
-  Layers,
   Magnet,
   ArrowRight,
-  Send,
-  Star,
-  Check,
   AlertTriangle,
+  IndianRupee,
+  Gem,
+  Crown,
+  UserCheck,
+  Repeat,
+  Headset,
+  ShieldCheck,
+  Loader2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { getToken } from "@/lib/plan-token";
 
-// Data types
 export type IndicatorBillingCycle = "monthly" | "quarterly" | "yearly";
+
+export interface DynamicPlan {
+  id: string;
+  name: string;
+  subtitle?: string | null;
+  badge?: string | null;
+  isHighlight: boolean;
+  hasCycles: boolean;
+  price?: number | null;
+  billingPeriod?: string | null;
+  monthlyPrice?: number | null;
+  quarterlyPrice?: number | null;
+  quarterlyDiscount?: string | null;
+  yearlyPrice?: number | null;
+  yearlyDiscount?: string | null;
+  features: string[];
+  buttonText?: string | null;
+  order: number;
+  isActive: boolean;
+}
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -44,7 +65,7 @@ const containerVariants: Variants = {
 };
 
 const itemVariants: Variants = {
-  hidden: { opacity: 0, y: 20 },
+  hidden: { opacity: 0, y: 16 },
   show: {
     opacity: 1,
     y: 0,
@@ -54,15 +75,32 @@ const itemVariants: Variants = {
 
 export default function OfficialMembershipPlans() {
   const router = useRouter();
-  const [indicatorCycle, setIndicatorCycle] = useState<IndicatorBillingCycle>("monthly");
+  const [plans, setPlans] = useState<DynamicPlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [cycleState, setCycleState] = useState<Record<string, IndicatorBillingCycle>>({});
 
-  const indicatorPricing = {
-    monthly: { price: 3499, label: "Month", period: "monthly" as const, periodText: "billed monthly", discount: null },
-    quarterly: { price: 9000, label: "3 Months", period: "monthly" as const, periodText: "billed every 3 months", discount: "Save ₹1,497" },
-    yearly: { price: 29499, label: "Year", period: "yearly" as const, periodText: "billed annually", discount: "Save ₹12,489 🔥" },
-  };
+  useEffect(() => {
+    async function loadPlans() {
+      try {
+        const res = await fetch("/api/plans");
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setPlans(json.data);
+        }
+      } catch (e) {
+        console.error("Failed to load dynamic plans:", e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadPlans();
+  }, []);
 
-  const handleCheckout = (price: number, cycle: "monthly" | "yearly", name?: string) => {
+  const handleCheckout = (
+    price: number,
+    cycle: "monthly" | "yearly",
+    name?: string
+  ) => {
     const token = getToken("PAID", price, cycle, name);
     router.push(`/checkout?plan=${token}`);
   };
@@ -72,40 +110,59 @@ export default function OfficialMembershipPlans() {
     router.push(`/checkout?plan=${token}`);
   };
 
+  function getFeatureIcon(text: string) {
+    const lower = text.toLowerCase();
+    if (lower.includes("website") || lower.includes("access")) return Globe;
+    if (lower.includes("gold") || lower.includes("gem")) return Gem;
+    if (lower.includes("map") || lower.includes("zone")) return Map;
+    if (lower.includes("swing") || lower.includes("signal")) return TrendingUp;
+    if (lower.includes("magnet")) return Magnet;
+    if (lower.includes("telegram") || lower.includes("vip")) return Sparkles;
+    if (lower.includes("discussion") || lower.includes("member")) return Users;
+    if (lower.includes("scanner")) return Radio;
+    if (lower.includes("indian") || lower.includes("rupee") || lower.includes("market")) return IndianRupee;
+    if (lower.includes("support")) return MessageSquare;
+    if (lower.includes("copy") || lower.includes("trading")) return Activity;
+    return CheckCircle2;
+  }
+
   return (
-    <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
-      {/* Dynamic Background Glows */}
+    <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-14">
+      {/* Background Ambient Glows */}
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-blue-600/10 dark:bg-blue-500/15 rounded-full blur-[140px]" />
-        <div className="absolute top-1/2 right-10 w-[400px] h-[400px] bg-amber-500/10 dark:bg-amber-500/15 rounded-full blur-[120px]" />
-        <div className="absolute bottom-10 left-10 w-[400px] h-[400px] bg-emerald-500/10 dark:bg-emerald-500/15 rounded-full blur-[120px]" />
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-sky-500/10 dark:bg-sky-400/10 rounded-full blur-[140px]" />
       </div>
 
-      {/* ==================== ⏳ URGENCY BANNER ==================== */}
+      {/* ==================== URGENCY BANNER ==================== */}
       <motion.div
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
-        className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-amber-500/20 p-px shadow-lg"
+        className="relative overflow-hidden rounded-2xl bg-slate-100 dark:bg-zinc-950 p-px shadow-sm border border-slate-200/80 dark:border-white/10"
       >
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-2xl bg-slate-900/90 dark:bg-zinc-950/95 px-6 py-4 backdrop-blur-md border border-amber-500/30">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-rose-500 text-white shadow-md shadow-amber-500/20">
-              <Clock className="h-5 w-5 animate-pulse" />
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-2xl bg-white/95 dark:bg-zinc-950/95 px-6 py-4 backdrop-blur-md">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
+              <Clock className="h-5 w-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="inline-block h-2 w-2 rounded-full bg-rose-500 animate-ping" />
-                <span className="text-xs font-black uppercase tracking-wider text-amber-400">Limited Time Access</span>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500" />
+                </span>
+                <span className="text-xs font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400">
+                  Limited Offer
+                </span>
               </div>
-              <h4 className="text-sm font-bold text-white sm:text-base">
-                ⏳ FREE INDICATOR ACCESS ENDS — <span className="text-amber-400 font-extrabold underline decoration-amber-500">14 AUGUST</span>
+              <h4 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white mt-0.5">
+                Free Indicator Access Ends — <span className="text-sky-600 dark:text-cyan-400 font-extrabold">August 14</span>
               </h4>
             </div>
           </div>
           <a
             href="#vip-plans"
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-rose-500 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:from-amber-400 hover:to-rose-400 transition-all transform hover:scale-[1.02]"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 dark:bg-sky-500 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-sky-500 dark:hover:bg-sky-400 transition-all transform hover:scale-[1.02]"
           >
             Claim Access Before Cutoff
             <ArrowRight className="h-4 w-4" />
@@ -113,7 +170,7 @@ export default function OfficialMembershipPlans() {
         </div>
       </motion.div>
 
-      {/* ==================== HERO ANNOUNCEMENT ==================== */}
+      {/* ==================== HERO HEADER ==================== */}
       <motion.div
         initial="hidden"
         animate="show"
@@ -122,263 +179,198 @@ export default function OfficialMembershipPlans() {
       >
         <motion.div
           variants={itemVariants}
-          className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 backdrop-blur-sm"
+          className="inline-flex items-center gap-2 rounded-full border border-sky-500/20 bg-sky-500/10 px-4 py-1.5 text-xs font-bold text-sky-600 dark:text-sky-400 backdrop-blur-sm"
         >
-          <Sparkles className="h-4 w-4 text-blue-500 dark:text-blue-400" />
-          <span>🚀 SFA OFFICIAL MEMBERSHIP PLANS</span>
+          <Sparkles className="h-4 w-4 text-sky-500 dark:text-sky-400" />
+          <span>OFFICIAL MEMBERSHIP PLANS</span>
         </motion.div>
 
         <motion.h1
           variants={itemVariants}
           className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-slate-900 dark:text-white"
         >
-          Our New Membership Plans <br className="hidden sm:inline" />
-          <span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-amber-500 bg-clip-text text-transparent dark:from-blue-400 dark:via-indigo-300 dark:to-amber-400">
-            Are Officially Here!
+          Institutional Trading Plans <br className="hidden sm:inline" />
+          <span className="text-sky-600 dark:text-sky-400">
+            Built For Precision
           </span>
         </motion.h1>
 
         <motion.p
           variants={itemVariants}
-          className="text-base sm:text-lg text-slate-600 dark:text-slate-300 font-medium"
+          className="text-base sm:text-lg text-slate-600 dark:text-slate-400 font-medium leading-relaxed"
         >
-          Dear SFA Family ❤️ Unlock institutional-grade indicators, scanners, Gold research setups, and algorithmic automation designed for ultimate precision.
+          Unlock proprietary indicators, real-time market scanners, institutional Gold research, and algorithmic automation engineered for professional traders.
         </motion.p>
       </motion.div>
 
-      {/* ==================== CORE PAID MEMBERSHIP CARDS ==================== */}
-      <div id="vip-plans" className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch pt-4">
-        
-        {/* ==================== PLAN 1: INDICATOR + SCANNER VIP ==================== */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="relative flex flex-col justify-between rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/80 p-8 shadow-xl backdrop-blur-xl hover:border-blue-500/50 transition-all duration-300 group"
-        >
-          {/* Subtle Top Accent */}
-          <div className="absolute top-0 left-8 right-8 h-1 bg-gradient-to-r from-blue-500 to-cyan-400 rounded-t-full" />
+      {/* Loading Spinner */}
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-sky-500" />
+        </div>
+      )}
 
-          <div>
-            {/* Header / Title */}
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">📊</span>
-                  <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                    INDICATOR + SCANNER VIP
-                  </h3>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">
-                  Complete algorithmic indicators & market scanners for daily consistency.
-                </p>
-              </div>
-              <span className="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-extrabold text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                Core VIP
-              </span>
-            </div>
+      {/* ==================== PRICING CARDS DYNAMIC GRID ==================== */}
+      {!loading && (
+        <div id="vip-plans" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 items-stretch pt-4">
+          {plans.map((plan, index) => {
+            const currentCycle = cycleState[plan.id] || "monthly";
 
-            {/* Pricing Selector Tabs */}
-            <div className="mt-6 p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 grid grid-cols-3 gap-1">
-              {(["monthly", "quarterly", "yearly"] as IndicatorBillingCycle[]).map((cycle) => {
-                const item = indicatorPricing[cycle];
-                const active = indicatorCycle === cycle;
-                return (
-                  <button
-                    key={cycle}
-                    onClick={() => setIndicatorCycle(cycle)}
-                    className={`relative py-2.5 px-2 rounded-xl text-xs font-bold transition-all duration-200 flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
-                      active
-                        ? "bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-md"
-                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                    }`}
-                  >
-                    <span>{item.label}</span>
-                    {item.discount && (
-                      <span className={`text-[9px] font-black leading-none ${active ? "text-blue-600 dark:text-amber-300" : "text-emerald-500"}`}>
-                        {item.discount}
+            let displayPrice = plan.price || 0;
+            let displayPeriod = plan.billingPeriod || "month";
+
+            if (plan.hasCycles) {
+              if (currentCycle === "monthly") {
+                displayPrice = plan.monthlyPrice || 3499;
+                displayPeriod = "billed monthly";
+              } else if (currentCycle === "quarterly") {
+                displayPrice = plan.quarterlyPrice || 9000;
+                displayPeriod = "billed every 3 months";
+              } else if (currentCycle === "yearly") {
+                displayPrice = plan.yearlyPrice || 29499;
+                displayPeriod = "billed annually";
+              }
+            }
+
+            return (
+              <motion.div
+                key={plan.id || index}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: index * 0.05 }}
+                className={`relative flex flex-col justify-between rounded-3xl p-7 sm:p-8 shadow-xl backdrop-blur-xl transition-all duration-300 group ${
+                  plan.isHighlight
+                    ? "border-3 border-sky-500/60 dark:border-sky-400/30 bg-white dark:bg-zinc-950/80"
+                    : "border border-slate-200/80 dark:border-white/10 bg-white dark:bg-zinc-950/80 hover:border-sky-500/40"
+                }`}
+              >
+                {/* Highlight Badge */}
+                {plan.isHighlight && (
+                  <div className="absolute -top-3.5 right-6 bg-sky-600 dark:bg-sky-500 text-white font-extrabold text-[11px] uppercase tracking-wider px-3.5 py-1 rounded-full shadow-md flex items-center gap-1.5">
+                    <Crown className="h-3.5 w-3.5 text-white" />
+                    <span>{plan.badge || "Highlighted VIP"}</span>
+                  </div>
+                )}
+
+                <div className="space-y-6">
+                  {/* Card Header */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
+                          {plan.isHighlight ? <Crown className="h-4.5 w-4.5" /> : plan.hasCycles ? <Activity className="h-4.5 w-4.5" /> : <Zap className="h-4.5 w-4.5" />}
+                        </div>
+                        <h3 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                          {plan.name}
+                        </h3>
+                      </div>
+                      {plan.subtitle && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                          {plan.subtitle}
+                        </p>
+                      )}
+                    </div>
+
+                    {!plan.isHighlight && plan.badge && (
+                      <span className="rounded-full bg-slate-100 dark:bg-zinc-900 px-3 py-1 text-[11px] font-bold text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-white/10 shrink-0">
+                        {plan.badge}
                       </span>
                     )}
-                  </button>
-                );
-              })}
-            </div>
+                  </div>
 
-            {/* Display Active Pricing */}
-            <div className="mt-6 flex items-baseline gap-2">
-              <span className="text-4xl sm:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
-                ₹{indicatorPricing[indicatorCycle].price.toLocaleString("en-IN")}
-              </span>
-              <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">
-                / {indicatorPricing[indicatorCycle].periodText}
-              </span>
-            </div>
+                  {/* Multi-Cycle Selector Tabs (if hasCycles = true) */}
+                  {plan.hasCycles && (
+                    <div className="p-1 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-white/5 grid grid-cols-3 gap-1">
+                      {[
+                        { key: "monthly" as const, label: "Month", discount: null },
+                        { key: "quarterly" as const, label: "3 Months", discount: plan.quarterlyDiscount },
+                        { key: "yearly" as const, label: "Year", discount: plan.yearlyDiscount },
+                      ].map((cycle) => {
+                        const active = currentCycle === cycle.key;
+                        return (
+                          <button
+                            key={cycle.key}
+                            onClick={() => setCycleState((prev) => ({ ...prev, [plan.id]: cycle.key }))}
+                            className={`py-2 px-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                              active
+                                ? "bg-white dark:bg-sky-500 text-slate-900 dark:text-white shadow-sm"
+                                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                            }`}
+                          >
+                            <span>{cycle.label}</span>
+                            {cycle.discount && (
+                              <span className={`text-[8px] font-extrabold leading-none ${active ? "text-sky-600 dark:text-sky-100" : "text-cyan-600 dark:text-cyan-400"}`}>
+                                {cycle.discount}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
-            {/* Feature List */}
-            <div className="mt-8 space-y-3.5 border-t border-slate-100 dark:border-slate-800/80 pt-6">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                What&apos;s Included:
-              </span>
-              
-              <ul className="space-y-3">
-                <li className="flex items-center gap-3 text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-                  <span>4 Private SFA Indicators</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  <Radio className="h-5 w-5 text-blue-500 shrink-0" />
-                  <span>SFA Premium Scanner</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  <span className="text-base shrink-0">🇮🇳</span>
-                  <span>Indian Market Included</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  <Sparkles className="h-5 w-5 text-indigo-500 shrink-0" />
-                  <span>VIP Telegram Channel Access</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  <Users className="h-5 w-5 text-cyan-500 shrink-0" />
-                  <span>1-to-1 Member Plan Discussion</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  <Activity className="h-5 w-5 text-amber-500 shrink-0" />
-                  <span>Copy Trading Access</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  <MessageSquare className="h-5 w-5 text-emerald-500 shrink-0" />
-                  <span>24/7 Support</span>
-                </li>
-              </ul>
-            </div>
-          </div>
+                  {/* Price */}
+                  <div className="flex items-baseline gap-2 pt-2">
+                    <span className="text-4xl sm:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
+                      ₹{displayPrice.toLocaleString("en-IN")}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      / {displayPeriod}
+                    </span>
+                  </div>
 
-          {/* CTA */}
-          <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800/80">
-            <button
-              onClick={() => handleCheckout(indicatorPricing[indicatorCycle].price, indicatorPricing[indicatorCycle].period, "INDICATOR + SCANNER VIP")}
-              className="w-full py-4 rounded-2xl font-bold text-sm bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-600/25 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer transform active:scale-[0.99]"
-            >
-              <span>Get Indicator + Scanner VIP</span>
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        </motion.div>
-
-        {/* ==================== PLAN 2: SFA GOLD RESEARCH ==================== */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="relative flex flex-col justify-between rounded-3xl border-2 border-amber-500/50 bg-gradient-to-b from-amber-500/5 via-slate-900/90 to-slate-950 p-8 shadow-2xl backdrop-blur-xl hover:border-amber-400 transition-all duration-300 group"
-        >
-          {/* Gold VIP Highlight Badge */}
-          <div className="absolute -top-4 right-8 bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 font-black text-xs uppercase tracking-wider px-4 py-1.5 rounded-full shadow-lg flex items-center gap-1.5">
-            <Flame className="h-4 w-4 fill-slate-950" />
-            <span>👑 Gold VIP Research</span>
-          </div>
-
-          <div>
-            {/* Header / Title */}
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">👑</span>
-                  <h3 className="text-2xl font-black text-white tracking-tight">
-                    SFA GOLD RESEARCH
-                  </h3>
+                  {/* Feature List */}
+                  <div className="space-y-3 border-t border-slate-100 dark:border-white/10 pt-6">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                      What&apos;s Included:
+                    </span>
+                    
+                    <ul className="space-y-3">
+                      {plan.features.map((feat, fIdx) => {
+                        const IconComponent = getFeatureIcon(feat);
+                        return (
+                          <li key={fIdx} className="flex items-center gap-3 text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200">
+                            <IconComponent className="h-4.5 w-4.5 text-sky-500 dark:text-sky-400 shrink-0" />
+                            <span>{feat}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
                 </div>
-                <p className="text-xs text-amber-200/80 font-medium mt-1">
-                  24/7 Precision Gold signals, zone maps, strike levels & website access.
-                </p>
-              </div>
-            </div>
 
-            {/* Price display */}
-            <div className="mt-8 flex items-baseline gap-2">
-              <span className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 tracking-tight">
-                ₹6,000
-              </span>
-              <span className="text-sm font-semibold text-amber-200/70">
-                / Month
-              </span>
-            </div>
+                {/* CTA Button */}
+                <div className="pt-8 border-t border-slate-100 dark:border-white/10 mt-8">
+                  <button
+                    onClick={() =>
+                      handleCheckout(
+                        displayPrice,
+                        currentCycle === "yearly" ? "yearly" : "monthly",
+                        plan.name
+                      )
+                    }
+                    className={`w-full py-3.5 rounded-xl font-bold text-xs sm:text-sm transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
+                      plan.isHighlight
+                        ? "bg-sky-600 hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-400 text-white shadow-lg shadow-sky-500/20"
+                        : "bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-950 shadow-md"
+                    }`}
+                  >
+                    <span>{plan.buttonText || `Get ${plan.name}`}</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
 
-            {/* Feature List */}
-            <div className="mt-8 space-y-3.5 border-t border-amber-500/20 pt-6">
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                Exclusive Features:
-              </span>
-              
-              <ul className="space-y-3">
-                <li className="flex items-center gap-3 text-sm font-semibold text-white">
-                  <Globe className="h-5 w-5 text-amber-400 shrink-0" />
-                  <span>Private Website Access</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-white">
-                  <span className="text-base shrink-0">🟡</span>
-                  <span>24/7 Gold Research & Setups</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-white">
-                  <Map className="h-5 w-5 text-amber-400 shrink-0" />
-                  <span>Full Zone Map</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-white">
-                  <Zap className="h-5 w-5 text-yellow-400 shrink-0" />
-                  <span>Strike Signals</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-white">
-                  <TrendingUp className="h-5 w-5 text-amber-400 shrink-0" />
-                  <span>Swing Signals</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-white">
-                  <Clock className="h-5 w-5 text-amber-400 shrink-0" />
-                  <span>Multi-Timeframe Signals</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-white">
-                  <Magnet className="h-5 w-5 text-amber-400 shrink-0" />
-                  <span>Magnet Zones</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-white">
-                  <Sparkles className="h-5 w-5 text-amber-400 shrink-0" />
-                  <span>VIP Telegram Channel Access</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-white">
-                  <Users className="h-5 w-5 text-amber-400 shrink-0" />
-                  <span>1-to-1 Member Plan Discussion</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-white">
-                  <Activity className="h-5 w-5 text-amber-400 shrink-0" />
-                  <span>Copy Trading Access</span>
-                </li>
-                <li className="flex items-center gap-3 text-sm font-semibold text-white">
-                  <MessageSquare className="h-5 w-5 text-amber-400 shrink-0" />
-                  <span>24/7 Support</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          {/* CTA */}
-          <div className="mt-8 pt-6 border-t border-amber-500/20">
-            <button
-              onClick={() => handleCheckout(6000, "monthly", "SFA GOLD RESEARCH")}
-              className="w-full py-4 rounded-2xl font-bold text-sm bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-slate-950 shadow-xl shadow-amber-500/20 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer transform active:scale-[0.99]"
-            >
-              <span>Get SFA Gold Research</span>
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        </motion.div>
-      </div>
-
-      {/* ==================== SPECIAL INCLUDED / LAUNCH BONUSES ==================== */}
-      <div className="pt-6 space-y-6">
+      {/* ==================== SPECIAL INCLUDED / LAUNCH PERKS ==================== */}
+      <div className="pt-8 space-y-6">
         <div className="text-center space-y-2">
-          <span className="text-xs font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-            Exclusive Ecosystem Offers
+          <span className="text-xs font-extrabold uppercase tracking-wider text-sky-600 dark:text-sky-400">
+            Ecosystem Offers
           </span>
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">
             Special Launch Perks & Automated Trading
@@ -387,42 +379,42 @@ export default function OfficialMembershipPlans() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           
-          {/* Card 3: $20 -> $10,000 Challenge */}
+          {/* Card A: $20 -> $10,000 Challenge */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="relative flex flex-col justify-between rounded-3xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/60 via-slate-900 to-slate-950 p-6 sm:p-8 backdrop-blur-xl"
+            className="relative flex flex-col justify-between rounded-3xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-zinc-950/80 p-7 sm:p-8 backdrop-blur-xl shadow-lg"
           >
-            <div>
+            <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 text-xs font-black text-emerald-400">
-                  <Gift className="h-3.5 w-3.5" />
-                  <span>🎁 FREE FOR ALL ACTIVE SFA MEMBERS DURING LAUNCH</span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 border border-sky-500/20 px-3 py-1 text-xs font-bold text-sky-600 dark:text-sky-400">
+                  <Gift className="h-3.5 w-3.5 text-sky-500 dark:text-sky-400" />
+                  <span>Free For Active SFA Members During Launch</span>
                 </span>
               </div>
 
-              <h3 className="mt-4 text-2xl font-black text-white flex items-center gap-2">
-                <span>🚀 $20 → $10,000 CHALLENGE</span>
+              <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>$20 → $10,000 Challenge</span>
               </h3>
 
-              <p className="mt-2 text-sm text-slate-300 leading-relaxed font-medium">
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
                 Step-by-step compounding framework, risk management protocols, and high-probability setups engineered to scale a mini account.
               </p>
 
-              <div className="mt-4 inline-flex items-center gap-2 text-xs font-bold text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-xl border border-amber-500/20">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                <span>From next month → Separate Paid Plan</span>
+              <div className="inline-flex items-center gap-2 text-xs font-semibold text-sky-600 dark:text-sky-400 bg-sky-500/10 px-3 py-1.5 rounded-xl border border-sky-500/20">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-sky-500 dark:text-sky-400" />
+                <span>Separate paid plan starting next month</span>
               </div>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-400">
-                Included with any active membership
+            <div className="mt-6 pt-4 border-t border-slate-100 dark:border-white/10 flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                Included with active membership
               </span>
               <a
                 href="#vip-plans"
-                className="inline-flex items-center gap-1 text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
+                className="inline-flex items-center gap-1 text-xs font-bold text-sky-600 dark:text-sky-400 hover:text-cyan-500 transition-colors"
               >
                 Join Plan to Unlock
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -430,39 +422,39 @@ export default function OfficialMembershipPlans() {
             </div>
           </motion.div>
 
-          {/* Card 4: SFA EA - FREE */}
+          {/* Card B: SFA EA */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: 0.1 }}
-            className="relative flex flex-col justify-between rounded-3xl border border-cyan-500/30 bg-gradient-to-br from-cyan-950/60 via-slate-900 to-slate-950 p-6 sm:p-8 backdrop-blur-xl"
+            className="relative flex flex-col justify-between rounded-3xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-zinc-950/80 p-7 sm:p-8 backdrop-blur-xl shadow-lg"
           >
-            <div>
+            <div className="space-y-4">
               <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-3 py-1 text-xs font-black text-cyan-400">
-                  <Bot className="h-3.5 w-3.5" />
-                  <span>PARTNER BROKER SPECIAL</span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 border border-sky-500/20 px-3 py-1 text-xs font-bold text-sky-600 dark:text-sky-400">
+                  <Bot className="h-3.5 w-3.5 text-sky-500 dark:text-sky-400" />
+                  <span>Partner Broker Special</span>
                 </span>
-                <span className="text-lg font-black text-emerald-400">FREE</span>
+                <span className="text-base font-extrabold text-sky-600 dark:text-cyan-400">FREE</span>
               </div>
 
-              <h3 className="mt-4 text-2xl font-black text-white flex items-center gap-2">
-                <span>🤖 SFA EA (Expert Advisor)</span>
+              <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>SFA EA (Expert Advisor)</span>
               </h3>
 
-              <p className="mt-3 text-sm text-slate-300 leading-relaxed font-medium">
-                Available to eligible members who open an account with our approved Partner Broker using the official SFA referral link/code.
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
+                Automated trading software available to eligible members who open an account with our approved Partner Broker using the official referral link.
               </p>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-400">
+            <div className="mt-6 pt-4 border-t border-slate-100 dark:border-white/10 flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
                 Zero upfront cost with partner link
               </span>
               <button
                 onClick={handleFreeCheckout}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 px-4 py-2 text-xs font-bold text-cyan-300 border border-cyan-500/40 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 px-4 py-2 text-xs font-bold text-sky-600 dark:text-sky-300 border border-sky-500/20 transition-colors cursor-pointer"
               >
                 <span>Claim Free EA Access</span>
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -478,34 +470,42 @@ export default function OfficialMembershipPlans() {
         initial={{ opacity: 0, scale: 0.98 }}
         whileInView={{ opacity: 1, scale: 1 }}
         viewport={{ once: true }}
-        className="rounded-3xl border border-blue-500/20 bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-blue-900/40 p-6 sm:p-8 backdrop-blur-xl shadow-xl text-center space-y-6"
+        className="rounded-3xl border border-slate-200/80 dark:border-sky-500/20 bg-slate-50/80 dark:bg-zinc-950/90 p-6 sm:p-8 backdrop-blur-xl shadow-xl text-center space-y-6"
       >
-        <div className="flex items-center justify-center gap-2 text-rose-500">
-          <span className="text-lg">❤️</span>
-          <h3 className="text-lg sm:text-xl font-black uppercase tracking-wider text-white">
-            ALL PAID SFA PLANS INCLUDE
+        <div className="flex items-center justify-center gap-2">
+          <ShieldCheck className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+          <h3 className="text-base sm:text-lg font-extrabold uppercase tracking-wider text-slate-900 dark:text-white">
+            All Paid SFA Plans Include
           </h3>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 pt-2">
-          <div className="flex flex-col items-center p-4 rounded-2xl bg-slate-900/60 border border-white/5 space-y-2">
-            <span className="text-2xl">💎</span>
-            <span className="text-xs sm:text-sm font-bold text-white">VIP Channel Access</span>
+          <div className="flex flex-col items-center p-5 rounded-2xl bg-white dark:bg-zinc-900/80 border border-slate-200/80 dark:border-white/10 shadow-sm hover:border-sky-500/40 transition-all space-y-2.5">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 dark:bg-sky-400/10 dark:text-sky-400">
+              <Crown className="h-5 w-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">VIP Channel Access</span>
           </div>
 
-          <div className="flex flex-col items-center p-4 rounded-2xl bg-slate-900/60 border border-white/5 space-y-2">
-            <span className="text-2xl">👤</span>
-            <span className="text-xs sm:text-sm font-bold text-white">1-to-1 Member Plan Discussion</span>
+          <div className="flex flex-col items-center p-5 rounded-2xl bg-white dark:bg-zinc-900/80 border border-slate-200/80 dark:border-white/10 shadow-sm hover:border-sky-500/40 transition-all space-y-2.5">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 dark:bg-sky-400/10 dark:text-sky-400">
+              <UserCheck className="h-5 w-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">1-to-1 Member Discussion</span>
           </div>
 
-          <div className="flex flex-col items-center p-4 rounded-2xl bg-slate-900/60 border border-white/5 space-y-2">
-            <span className="text-2xl">🔄</span>
-            <span className="text-xs sm:text-sm font-bold text-white">Copy Trading Access</span>
+          <div className="flex flex-col items-center p-5 rounded-2xl bg-white dark:bg-zinc-900/80 border border-slate-200/80 dark:border-white/10 shadow-sm hover:border-sky-500/40 transition-all space-y-2.5">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 dark:bg-sky-400/10 dark:text-sky-400">
+              <Repeat className="h-5 w-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">Copy Trading Access</span>
           </div>
 
-          <div className="flex flex-col items-center p-4 rounded-2xl bg-slate-900/60 border border-white/5 space-y-2">
-            <span className="text-2xl">💬</span>
-            <span className="text-xs sm:text-sm font-bold text-white">24/7 Support</span>
+          <div className="flex flex-col items-center p-5 rounded-2xl bg-white dark:bg-zinc-900/80 border border-slate-200/80 dark:border-white/10 shadow-sm hover:border-sky-500/40 transition-all space-y-2.5">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 dark:bg-sky-400/10 dark:text-sky-400">
+              <Headset className="h-5 w-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">24/7 Priority Support</span>
           </div>
         </div>
       </motion.div>
@@ -515,12 +515,12 @@ export default function OfficialMembershipPlans() {
         initial={{ opacity: 0 }}
         whileInView={{ opacity: 1 }}
         viewport={{ once: true }}
-        className="text-center py-6 border-t border-slate-200 dark:border-slate-800 space-y-2"
+        className="text-center py-6 border-t border-slate-200/80 dark:border-white/10 space-y-1.5"
       >
-        <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-          ❤️ Thank you for your incredible support. The next chapter of SFA starts now. 🚀
+        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+          Thank you for being part of SmartFlowAlgo. The next chapter of institutional trading starts now.
         </p>
-        <span className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+        <span className="text-xs font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
           SMARTFLOWALGO — SFA
         </span>
       </motion.div>

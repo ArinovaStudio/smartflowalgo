@@ -4,7 +4,7 @@ import { CheckCircle, AlertCircle, Loader2, Mail } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import React, { useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { signIn, getSession } from 'next-auth/react';
 
 type View = "login" | "forgot" | "forgot-sent";
 
@@ -36,8 +36,12 @@ function Login() {
         setLoading(false);
       } else {
         setLoginSubmitted(true);
+        // Fetch the fresh session to read userType
+        const session = await getSession();
+        const userType = (session?.user as any)?.userType;
+        const destination = userType === "ADMIN" ? "/admin" : "/user";
         setTimeout(() => {
-          router.push("/simulator");
+          router.push(destination);
           router.refresh();
         }, 1200);
       }
@@ -51,7 +55,8 @@ function Login() {
     setGoogleLoading(true);
     setErrorMsg("");
     try {
-      await signIn("google", { callbackUrl: "/simulator" });
+      // Google OAuth will redirect; middleware handles role-based routing after callback
+      await signIn("google", { callbackUrl: "/api/auth/redirect" });
     } catch {
       setErrorMsg("Google sign in failed");
       setGoogleLoading(false);
@@ -153,10 +158,10 @@ function Login() {
               Session initialized successfully. Redirecting you to your trading dashboard...
             </p>
             <button
-              onClick={() => router.push("/simulator")}
+              onClick={() => router.push("/user")}
               className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow cursor-pointer"
             >
-              Proceed to Simulator Sandbox
+              Go to Dashboard
             </button>
           </div>
 

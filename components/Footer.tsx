@@ -3,13 +3,18 @@
 import React from "react";
 import Logo from "./Logo";
 import { Send, Mail, Phone, Calendar, ShieldAlert, Instagram } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { getToken } from "@/lib/plan-token";
 import Link from "next/link";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
   const router = useRouter();
+  const pathname = usePathname();
+
+  // Hide footer inside admin panel
+  if (pathname?.startsWith("/admin")) return null;
+
   function goToCheckout() {
     const tok = getToken("FREE")
     router.push(`/checkout?plan=${tok}`)

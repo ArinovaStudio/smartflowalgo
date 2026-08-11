@@ -30,6 +30,7 @@ enum PaymentStatus {
 enum UserType {
   CLIENT
   INFULENCER
+  ADMIN
 }
 
 model User {
@@ -116,4 +117,39 @@ model Payment {
 
   @@index([userId])
   @@index([promoterId])
+}
+
+model Plan {
+  id                String   @id @default(cuid())
+  name              String
+  subtitle          String?
+  badge             String?
+  isHighlight       Boolean  @default(false)
+
+  // Pricing mode
+  hasCycles         Boolean  @default(false)
+
+  // Single price fields (used when hasCycles = false)
+  price             Int?
+  billingPeriod     String?  // e.g., "3 days access" or "month"
+
+  // Multi-cycle pricing fields (used when hasCycles = true)
+  monthlyPrice      Int?     // e.g. 3499
+  quarterlyPrice    Int?     // e.g. 9000
+  quarterlyDiscount String?  // e.g. "Save ₹1,497"
+  yearlyPrice       Int?     // e.g. 29499
+  yearlyDiscount    String?  // e.g. "Save ₹12,489"
+
+  // Features list
+  features          String[]
+
+  // Custom CTA text
+  buttonText        String?
+
+  // Order & Status
+  order             Int      @default(0)
+  isActive          Boolean  @default(true)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }

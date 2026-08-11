@@ -26,7 +26,7 @@ const MEMBER_COUNT = 12400;
 
 const FEATURES = [
   { icon: Send, title: "Telegram Access", desc: "Straight into the free group" },
-  {icon: IndianRupee, title: "Indian Market", desc: "Built for Indian market"},
+  { icon: IndianRupee, title: "Indian Market", desc: "Built for Indian market" },
   { icon: Gem, title: "Gold Ideas", desc: "XAU/USD levels, daily" },
   { icon: Bitcoin, title: "BTC Ideas", desc: "Bitcoin structure & zones" },
   { icon: Coins, title: "Forex Ideas", desc: "Major pairs, called early" },
@@ -122,9 +122,9 @@ export default function FreePlanBanner() {
               Indicators
             </span>.{" "} <br />
             <span className="bg-gradient-to-r from-sky-600 to-cyan-400 bg-clip-text text-transparent dark:from-sky-400 dark:to-cyan-300">
-             Start
+              Start
             </span>
-              {" "} in seconds.
+            {" "} in seconds.
           </motion.h2>
 
           <motion.p
