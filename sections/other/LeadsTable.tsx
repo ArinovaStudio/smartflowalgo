@@ -7,6 +7,8 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   ArrowUpDown,
   RefreshCw,
   LucideTrash,
@@ -296,11 +298,10 @@ export default function LeadsTable({
                 <td className="px-4 py-3 text-slate-400">{lead.email}</td>
                 <td className="px-4 py-3">
                   <span
-                    className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      lead.planType === "PAID"
-                        ? "bg-cyan-500/10 text-cyan-300 ring-1 ring-inset ring-cyan-500/30"
-                        : "bg-slate-500/10 text-slate-300 ring-1 ring-inset ring-slate-500/30"
-                    }`}
+                    className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${lead.planType === "PAID"
+                      ? "bg-cyan-500/10 text-cyan-300 ring-1 ring-inset ring-cyan-500/30"
+                      : "bg-slate-500/10 text-slate-300 ring-1 ring-inset ring-slate-500/30"
+                      }`}
                   >
                     {lead.planType === "PAID" ? "Paid" : "Free"}
                   </span>
@@ -361,23 +362,45 @@ export default function LeadsTable({
 
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setPage(1)}
+            disabled={pagination.page <= 1 || loading}
+            title="First page"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-slate-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChevronsLeft className="h-4 w-4" />
+          </button>
+
+          <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={pagination.page <= 1 || loading}
+            title="Previous page"
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-slate-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
+
           <span className="min-w-[80px] text-center">
             Page {pagination.page} of {pagination.totalPages}
           </span>
+
           <button
             onClick={() =>
               setPage((p) => Math.min(pagination.totalPages, p + 1))
             }
             disabled={pagination.page >= pagination.totalPages || loading}
+            title="Next page"
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-slate-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ChevronRight className="h-4 w-4" />
+          </button>
+
+          <button
+            onClick={() => setPage(pagination.totalPages)}
+            disabled={pagination.page >= pagination.totalPages || loading}
+            title="Last page"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-slate-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChevronsRight className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -415,9 +438,8 @@ function SortableHeader({
     <th className="px-4 py-3 font-medium">
       <button
         onClick={() => onSort(field)}
-        className={`flex items-center gap-1 transition hover:text-white ${
-          active ? "text-white" : ""
-        }`}
+        className={`flex items-center gap-1 transition hover:text-white ${active ? "text-white" : ""
+          }`}
       >
         {label}
         <ArrowUpDown

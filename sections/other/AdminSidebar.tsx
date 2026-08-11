@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { LayoutDashboard, Menu, Megaphone, Users, X } from "lucide-react";
+import { LayoutDashboard, Menu, Megaphone, Users, X, LogOut, Loader2 } from "lucide-react";
 
 const NAV_ITEMS = [
   { label: "Checkout Leads", href: "/admin", icon: Users },
@@ -13,7 +13,25 @@ const NAV_ITEMS = [
 
 export default function AdminSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      // Overwrite cached Basic Auth credentials with bad ones.
+      // Works in some browsers, not guaranteed in all.
+      await fetch("/admin", {
+        headers: { Authorization: "Basic " + btoa("logout:logout") },
+      });
+    } catch (err) {
+      console.error("Sign out failed:", err);
+    } finally {
+      router.push("/");
+      router.refresh();
+    }
+  };
 
   return (
     <>
@@ -45,9 +63,8 @@ export default function AdminSidebar() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-0 z-50 flex h-screen w-64 flex-col border-r border-slate-800 bg-slate-900/95 backdrop-blur transition-transform duration-300 ease-in-out md:translate-x-0 ${
-          open ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed left-0 top-0 z-50 flex h-screen w-64 flex-col border-r border-slate-800 bg-slate-900/95 backdrop-blur transition-transform duration-300 ease-in-out md:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"
+          }`}
       >
         <div className="flex items-center justify-between px-5 py-5">
           <div className="flex items-center gap-2">
@@ -75,11 +92,10 @@ export default function AdminSidebar() {
                 key={item.href}
                 href={item.href}
                 onClick={() => setOpen(false)}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-sky-500/10 text-sky-400"
-                    : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                }`}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${isActive
+                  ? "bg-sky-500/10 text-sky-400"
+                  : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+                  }`}
               >
                 <Icon className="h-4 w-4" />
                 {item.label}
@@ -88,8 +104,21 @@ export default function AdminSidebar() {
           })}
         </nav>
 
-        <div className="border-t border-slate-800 px-5 py-4 text-xs text-slate-500">
-          Admin Panel
+        <div className="border-t border-slate-800 px-3 py-4">
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
+          >
+            {signingOut ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <LogOut className="h-4 w-4" />
+            )}
+            {signingOut ? "Signing out..." : "Sign out"}
+          </button>
+          <div className="mt-3 px-3 text-xs text-slate-500">Admin Panel</div>
         </div>
       </aside>
     </>
