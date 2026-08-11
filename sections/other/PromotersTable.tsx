@@ -17,11 +17,11 @@ import {
 
 type Promoter = {
   id: string;
-  name: string;
+  name: string | null;
   tradingViewId: string | null;
-  mobile: string;
+  mobile: string | null;
   email: string;
-  discount: number;
+  discount: number | null;
   planType: string | null;
   userType: string;
   createdAt: string;
@@ -171,7 +171,7 @@ export default function PromotersTable({ initialData, initialTotal, pageSize }: 
   }
 
   async function handleViewReferrals(promoter: Promoter) {
-    setReferralsPromoter({ id: promoter.id, name: promoter.name });
+    setReferralsPromoter({ id: promoter.id, name: promoter.name ?? "Promoter" });
     setReferralsModalOpen(true);
     setReferralsLoading(true);
     setReferralsError(null);

@@ -1,21 +1,17 @@
 "use client";
 
 import React, { useState } from "react";
-import { Menu, X, Send, LogIn, ChevronRight, Sparkles } from "lucide-react";
+import { Menu, X, Send, LogIn, ChevronRight, Sparkles, LogOut, User } from "lucide-react";
 import Logo from "./Logo";
 import ThemeToggle from "./ThemeToggle";
 import { useRouter } from "next/navigation";
 import { getToken } from "@/lib/plan-token";
 import Link from "next/link";
+import { useSession, signOut } from "next-auth/react";
 
 const navItems = [
   { label: "Home", page: "/" },
   { label: "Plans", page: "plans" },
-  // { label: "Free Resources", page: "resources" },
-  // { label: "Blogs", page: "blogs" },
-  // { label: "Indicators", page: "indicators" },
-  // { label: "Study Material", page: "study" },
-  // { label: "Simulator", page: "simulator" },
   { label: "About", page: "about" },
   { label: "Contact", page: "contact" },
 ];
@@ -26,6 +22,7 @@ export default function Header() {
   const [activePage, setActivePage] = useState(navItems[0].page);
   const router = useRouter();
   const [theme, setTheme] = useState<theme>("dark");
+  const { data: session, status } = useSession();
 
   const onThemeChange = () => {
     let newTheme: theme = "dark";
@@ -45,10 +42,10 @@ export default function Header() {
     setActivePage(page);
     setMobileMenuOpen(false);
   };
- 
+
   function goToCheckout() {
-    const tok = getToken("FREE")
-    router.push(`/checkout?plan=${tok}`)
+    const tok = getToken("FREE");
+    router.push(`/checkout?plan=${tok}`);
   }
 
   return (
@@ -106,12 +103,12 @@ export default function Header() {
             {/* Theme Toggle */}
             <ThemeToggle onThemeChange={onThemeChange} />
 
-            {/* Telegram CTA */}
+            {/* Instagram Link */}
             <a
               href="https://www.instagram.com/smartflowalgo"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center group gap-1.5 px-3 py-2 text-sm font-semibold uppercase rounded-lg border border-pink-500 hover:text-white  hover:bg-pink-500 text-pink-400 transition-all shrink-0 cursor-pointer  tracking-tight"
+              className="flex items-center group gap-1.5 px-3 py-2 text-sm font-semibold uppercase rounded-lg border border-pink-500 hover:text-white hover:bg-pink-500 text-pink-400 transition-all shrink-0 cursor-pointer tracking-tight"
               id="hdr-join-tg-btn"
             >
               <div className="w-5 h-5 text-pink-500 group-hover:text-white">
@@ -126,34 +123,52 @@ export default function Header() {
               Follow
             </a>
 
-            {/* <a
-              href="https://t.me/smartflowalgo"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center group gap-1.5 px-4 py-2.5 text-xs font-bold rounded-lg border border-sky-500 hover:text-white  hover:bg-sky-500 text-sky-400 transition-all shrink-0 cursor-pointer uppercase tracking-wider"
-              id="hdr-join-tg-btn"
-            >
-              <div className="w-4 h-4 text-sky-500 group-hover:text-white">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="currentColor"
-                viewBox="0 0 256 256"
-                >
-                <path d="M228.88,26.19a9,9,0,0,0-9.16-1.57L17.06,103.93a14.22,14.22,0,0,0,2.43,27.21L72,141.45V200a15.92,15.92,0,0,0,10,14.83,15.91,15.91,0,0,0,17.51-3.73l25.32-26.26L165,220a15.88,15.88,0,0,0,10.51,4,16.3,16.3,0,0,0,5-.79,15.85,15.85,0,0,0,10.67-11.63L231.77,35A9,9,0,0,0,228.88,26.19Zm-61.14,36L78.15,126.35l-49.6-9.73ZM88,200V152.52l24.79,21.74Zm87.53,8L92.85,135.5l119-85.29Z"></path>
-              </svg>
+            {/* Auth buttons or Profile */}
+            {session ? (
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200">
+                  {session.user?.image ? (
+                    <img
+                      src={session.user.image}
+                      alt={session.user.name || "User"}
+                      className="w-7 h-7 rounded-full border border-slate-300 dark:border-slate-700"
+                    />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">
+                      <User className="h-4 w-4" />
+                    </div>
+                  )}
+                  <span className="max-w-[100px] truncate">
+                    {session.user?.name || session.user?.email}
+                  </span>
                 </div>
-                Join
-            </a> */}
-
-            {/* Get Started Button */}
-            <button
-              onClick={() => handleNavClick("register")}
-              className="flex items-center gap-1 px-4 py-2.5 text-xs font-bold rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 dark:from-emerald-500 dark:to-teal-500 dark:hover:from-emerald-600 dark:hover:to-teal-600 text-white shadow-sm hover:shadow-md transition-all shrink-0 cursor-pointer uppercase tracking-wider"
-              id="hdr-get-started-btn"
-            >
-              Get Started
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
+                <button
+                  onClick={() => signOut({ callbackUrl: "/login" })}
+                  className="flex items-center gap-1 px-3 py-2 text-xs font-bold rounded-lg border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all cursor-pointer uppercase tracking-wider"
+                  title="Sign Out"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleNavClick("login")}
+                  className="px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer uppercase tracking-wider"
+                >
+                  Login
+                </button>
+                <button
+                  onClick={() => handleNavClick("register")}
+                  className="flex items-center gap-1 px-4 py-2.5 text-xs font-bold rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 dark:from-emerald-500 dark:to-teal-500 dark:hover:from-emerald-600 dark:hover:to-teal-600 text-white shadow-sm hover:shadow-md transition-all shrink-0 cursor-pointer uppercase tracking-wider"
+                  id="hdr-get-started-btn"
+                >
+                  Get Started
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Mobile controls (Menu Toggle, Theme Toggle) */}
@@ -206,26 +221,41 @@ export default function Header() {
             </div>
 
             <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2 flex flex-col">
-              <div className="flex items-center justify-between px-2">
-                <button
-                  onClick={() => handleNavClick("login")}
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer uppercase tracking-wider"
-                  id="m-hdr-login-btn"
-                >
-                  <LogIn className="h-4 w-4" />
-                  Login
-                </button>
+              {session ? (
+                <div className="flex items-center justify-between px-2">
+                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                    {session.user?.name || session.user?.email}
+                  </div>
+                  <button
+                    onClick={() => signOut({ callbackUrl: "/login" })}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-red-500/30 text-red-500 uppercase tracking-wider"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    Logout
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between px-2">
+                  <button
+                    onClick={() => handleNavClick("login")}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer uppercase tracking-wider"
+                    id="m-hdr-login-btn"
+                  >
+                    <LogIn className="h-4 w-4" />
+                    Login
+                  </button>
 
-                <button
-                  onClick={() => handleNavClick("register")}
-                  className="px-4 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer uppercase tracking-wider"
-                  id="m-hdr-get-started-btn"
-                >
-                  Get Started
-                </button>
-              </div>
+                  <button
+                    onClick={() => handleNavClick("register")}
+                    className="px-4 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer uppercase tracking-wider"
+                    id="m-hdr-get-started-btn"
+                  >
+                    Get Started
+                  </button>
+                </div>
+              )}
 
-              <button 
+              <button
                 onClick={goToCheckout}
                 className="flex items-center justify-center gap-2 w-full py-3 rounded-lg bg-blue-600 dark:bg-emerald-600 text-white text-xs font-bold shadow-sm uppercase tracking-wider"
                 id="m-hdr-join-tg-btn"
@@ -240,3 +270,4 @@ export default function Header() {
     </>
   );
 }
+

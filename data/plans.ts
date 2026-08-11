@@ -13,76 +13,94 @@ export interface Plan {
 
 export const plans: Plan[] = [
   {
-    id: "free-telegram",
-    name: "Free Telegram Access",
-    badge: "First 200 users",
+    id: "indicator-scanner-vip",
+    name: "INDICATOR + SCANNER VIP",
+    badge: "Most Popular",
+    popular: true,
+    pricing: {
+      USD: { price: 42, period: "month" },
+      GBP: { price: 33, period: "month" },
+      INR: { price: 3499, period: "month" }
+    },
+    features: [
+      "4 Private SFA Indicators",
+      "SFA Premium Scanner",
+      "Indian Market Included",
+      "VIP Telegram Channel Access",
+      "1-to-1 Member Plan Discussion",
+      "Copy Trading Access",
+      "24/7 Support"
+    ]
+  },
+  {
+    id: "gold-research-vip",
+    name: "SFA GOLD RESEARCH",
+    badge: "Gold VIP",
+    pricing: {
+      USD: { price: 72, period: "month" },
+      GBP: { price: 58, period: "month" },
+      INR: { price: 6000, period: "month" }
+    },
+    features: [
+      "Private Website Access",
+      "24/7 Gold Research & Setups",
+      "Full Zone Map",
+      "Strike Signals",
+      "Swing Signals",
+      "Multi-Timeframe Signals",
+      "Magnet Zones",
+      "VIP Telegram Channel Access",
+      "1-to-1 Member Plan Discussion",
+      "Copy Trading Access",
+      "24/7 Support"
+    ]
+  },
+  {
+    id: "challenge-launch-free",
+    name: "$20 → $10,000 CHALLENGE",
+    badge: "Launch Gift",
+    pricing: {
+      USD: { price: 0, period: "launch" },
+      GBP: { price: 0, period: "launch" },
+      INR: { price: 0, period: "launch" }
+    },
+    features: [
+      "FREE for active SFA members during launch",
+      "Compounding setup roadmap",
+      "Risk & position sizing rules",
+      "Separate paid plan starting next month"
+    ]
+  },
+  {
+    id: "sfa-ea-free",
+    name: "SFA EA — FREE",
+    badge: "Broker Partner",
     pricing: {
       USD: { price: 0, period: "forever" },
       GBP: { price: 0, period: "forever" },
       INR: { price: 0, period: "forever" }
     },
     features: [
-      "Free Telegram group access",
-      "Gold setup ideas",
-      "BTC setup ideas",
-      "Forex setup ideas",
-      "Market analysis posts",
-      "Risk management reminders",
-      "Basic indicator updates"
-    ]
-  },
-  {
-    id: "pro-signals",
-    name: "Pro Signals & Indicators",
-    popular: true,
-    pricing: {
-      USD: { price: 49, period: "month" },
-      GBP: { price: 39, period: "month" },
-      INR: { price: 4699, period: "month" }
-    },
-    features: [
-      "Everything in Starter",
-      "Gold, BTC, and Forex signal breakdowns",
-      "Indicator learning modules",
-      "Multi-timeframe lessons",
-      "Advanced simulator settings",
-      "Strategy worksheets",
-      "Priority Telegram updates"
-    ]
-  },
-  {
-    id: "elite-smartflow",
-    name: "Elite Smartflow",
-    pricing: {
-      USD: { price: 199, period: "month" },
-      GBP: { price: 149, period: "month" },
-      INR: { price: 18999, period: "month" }
-    },
-    features: [
-      "Everything in Algo Edge",
-      "Premium market-flow sessions",
-      "Group mentorship",
-      "Advanced Gold/BTC/Forex breakdowns",
-      "Personalized learning roadmap",
-      "Priority support",
-      "Monthly progress review"
+      "100% Free via Partner Broker link",
+      "Automated execution algorithms",
+      "Approved broker setup support",
+      "24/7 Support"
     ]
   }
 ];
 
 export const comparisonTable = [
-  { feature: "Telegram access", free: true, starter: true, pro: true, algo: true, elite: true },
-  { feature: "Gold setups", free: true, starter: true, pro: true, algo: true, elite: true },
-  { feature: "BTC setups", free: true, starter: true, pro: true, algo: true, elite: true },
-  { feature: "Forex setups", free: true, starter: true, pro: true, algo: true, elite: true },
-  { feature: "Market analysis", free: "Basic", starter: "Standard", pro: "Advanced", algo: "Advanced", elite: "Premium Sessions" },
-  { feature: "Risk reminders", free: true, starter: true, pro: true, algo: true, elite: true },
-  { feature: "Study material", free: false, starter: "Basic", pro: "Complete Library", algo: "Complete Library", elite: "Custom Roadmap" },
-  { feature: "Basic simulator", free: false, starter: true, pro: true, algo: true, elite: true },
-  { feature: "Advanced simulator", free: false, starter: false, pro: "Advanced Settings", algo: "Full Analytics", elite: "Full Analytics" },
-  { feature: "Indicator modules", free: false, starter: false, pro: true, algo: true, elite: true },
-  { feature: "Algo strategy builder", free: false, starter: false, pro: false, algo: true, elite: true },
-  { feature: "Trade log analytics", free: false, starter: false, pro: false, algo: true, elite: true },
-  { feature: "Mentorship", free: false, starter: false, pro: false, algo: false, elite: "Group sessions" },
-  { feature: "Priority support", free: false, starter: false, pro: "Telegram Priority", algo: "Priority", elite: "Personalized Support" }
+  { feature: "Private SFA Indicators (4)", indicatorVip: true, goldResearch: true },
+  { feature: "SFA Premium Scanner", indicatorVip: true, goldResearch: true },
+  { feature: "Indian Market Included", indicatorVip: true, goldResearch: true },
+  { feature: "VIP Telegram Channel Access", indicatorVip: true, goldResearch: true },
+  { feature: "1-to-1 Member Plan Discussion", indicatorVip: true, goldResearch: true },
+  { feature: "Copy Trading Access", indicatorVip: true, goldResearch: true },
+  { feature: "24/7 Support", indicatorVip: true, goldResearch: true },
+  { feature: "Private Website Access", indicatorVip: false, goldResearch: true },
+  { feature: "24/7 Gold Research & Setups", indicatorVip: false, goldResearch: true },
+  { feature: "Full Zone Map & Magnet Zones", indicatorVip: false, goldResearch: true },
+  { feature: "Strike & Multi-Timeframe Signals", indicatorVip: false, goldResearch: true },
+  { feature: "$20 → $10,000 Challenge Access", indicatorVip: "Launch Free", goldResearch: "Launch Free" },
+  { feature: "SFA EA (Bot)", indicatorVip: "Via Partner", goldResearch: "Via Partner" }
 ];

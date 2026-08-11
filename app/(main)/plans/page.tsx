@@ -1,15 +1,16 @@
-import Pricing from '@/sections/main/Pricing'
-import PricingBanner from '@/sections/other/HorizontalPricing'
-import FreePlanBanner from '@/sections/other/PricingBanner'
-import React from 'react'
+import React from "react";
+import OfficialMembershipPlans from "@/components/OfficialMembershipPlans";
+import type { Metadata } from "next";
 
-function page() {
+export const metadata: Metadata = {
+  title: "Official Membership Plans | SmartFlowAlgo",
+  description: "Explore official SFA membership plans including Indicator + Scanner VIP, Gold Research, $20 to $10k Challenge, and SFA EA.",
+};
+
+export default function PlansPage() {
   return (
-    <div className='flex flex-col gap-10 my-10'>
-    <FreePlanBanner />
-    <PricingBanner />
-    </div>
-  )
+    <main className="min-h-screen py-6 sm:py-10">
+      <OfficialMembershipPlans />
+    </main>
+  );
 }
-
-export default page

@@ -100,7 +100,7 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
   const [checking, setChecking] = useState<Partial<Record<FieldName, boolean>>>(
     {},
   );
-  const [amount, setAmount] = useState<number>(30)
+  const [amount, setAmount] = useState<number>(plan.price ?? 3499);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -331,15 +331,37 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
 
 
 
-  useEffect(() => {
-    if (discount?.discount) {
-      const newAmount = Number((amount * (1 - discount.discount / 100)).toFixed(2));
-      console.log(newAmount);
-      setAmount(newAmount)
-    }
-  }, [discount])
+  const planTitle = plan.name
+    ? plan.name
+    : plan.price === 3499
+    ? "INDICATOR + SCANNER VIP"
+    : plan.price === 9000
+    ? "INDICATOR + SCANNER VIP (3 Months)"
+    : plan.price === 29499
+    ? "INDICATOR + SCANNER VIP (Yearly)"
+    : plan.price === 6000
+    ? "SFA GOLD RESEARCH"
+    : isPaid
+    ? "SFA VIP Membership"
+    : "SFA Free Plan";
 
-  
+  const billingCycleText =
+    plan.price === 9000
+      ? "3 months"
+      : plan.billingCycle === "yearly"
+      ? "year"
+      : "month";
+
+  useEffect(() => {
+    const base = plan.price ?? 3499;
+    if (discount?.discount) {
+      const newAmount = Number((base * (1 - discount.discount / 100)).toFixed(2));
+      setAmount(newAmount);
+    } else {
+      setAmount(base);
+    }
+  }, [discount, plan.price]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -361,25 +383,30 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
             {isPaid ? "Paid plan" : "Free plan"}
           </span>
 
-          <h2 className="mt-4 text-2xl font-semibold text-white">
-            {plan.type}
+          <h2 className="mt-4 text-2xl font-bold text-white">
+            {planTitle}
           </h2>
 
           {isPaid && typeof plan.price === "number" && (
             <p className="mt-2 flex items-baseline gap-1 text-white">
-              <span className="text-3xl font-bold">
-                ${amount}
+              <span className="text-3xl font-black">
+                ₹{amount.toLocaleString("en-IN")}
               </span>
-              <span className={`text-sm text-slate-400`}>
-              <span className="line-through font-medium text-lg">{"  "}{discount?.discount ? "₹" + plan.price.toLocaleString("en-IN") : ""} </span>/ {plan.billingCycle === "yearly" ? "year" : "month"}
+              <span className="text-sm text-slate-400">
+                {discount?.discount ? (
+                  <span className="line-through font-medium text-lg mr-1">
+                    ₹{plan.price.toLocaleString("en-IN")}
+                  </span>
+                ) : null}
+                / {billingCycleText}
               </span>
             </p>
           )}
-          {
-            discount?.name &&
-          <p className="text-sm text-slate-400 mt-2 -mb-4 tracking-tight">Ref by <span className="text-slate-200 font-medium">{discount?.name}</span>
-          </p>
-          }
+          {discount?.name && (
+            <p className="text-sm text-slate-400 mt-2 -mb-4 tracking-tight">
+              Ref by <span className="text-slate-200 font-medium">{discount?.name}</span>
+            </p>
+          )}
 
           <div className="mt-6 space-y-3 border-t border-white/10 pt-6 text-sm text-slate-400">
             {isPaid ? (

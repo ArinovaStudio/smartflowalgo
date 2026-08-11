@@ -6,6 +6,8 @@ import Footer from "@/components/Footer";
 import CookieConsent from "@/sections/other/Cookie";
 import { cn } from "@/lib/utils";
 
+import NextAuthProvider from "@/components/providers/NextAuthProvider";
+
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const jetbrainsMono = JetBrains_Mono({
@@ -27,10 +29,12 @@ export default function RootLayout({
   return (
     <html lang="en" className={cn(jetbrainsMono.variable, "font-sans", geist.variable)}>
       <body suppressHydrationWarning className="antialiased min-h-screen dark:bg-gray-950 bg-white">
-        <Header />
-        {children}
-        <Footer />
-        <CookieConsent />
+        <NextAuthProvider>
+          <Header />
+          {children}
+          <Footer />
+          <CookieConsent />
+        </NextAuthProvider>
       </body>
     </html>
   );

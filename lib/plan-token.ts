@@ -2,6 +2,7 @@ export type PlanType = "FREE" | "PAID";
 
 export interface PlanPayload {
   type: PlanType;
+  name?: string;
   price?: number;
   billingCycle?: "monthly" | "yearly";
 }
@@ -32,6 +33,7 @@ export function decodePlanToken(token: string | null | undefined): PlanPayload |
     if (parsed?.type !== "FREE" && parsed?.type !== "PAID") return null;
     return {
       type: parsed.type,
+      name: typeof parsed.name === "string" ? parsed.name : undefined,
       price: typeof parsed.price === "number" ? parsed.price : undefined,
       billingCycle:
         parsed.billingCycle === "monthly" || parsed.billingCycle === "yearly"
@@ -39,16 +41,16 @@ export function decodePlanToken(token: string | null | undefined): PlanPayload |
           : undefined,
     };
   } catch(e) {
-    return e as any;
+    return null;
   }
 }
 
-
 export function getToken(
-    type: "FREE" | "PAID",
-    price?: number,
-    billingCycle?: "monthly" | "yearly"
-  ) {
-    const token = encodePlanToken({ type, price, billingCycle });
-    return token
-  };
+  type: "FREE" | "PAID",
+  price?: number,
+  billingCycle?: "monthly" | "yearly",
+  name?: string
+) {
+  const token = encodePlanToken({ type, price, billingCycle, name });
+  return token;
+}

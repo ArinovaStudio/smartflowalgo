@@ -186,11 +186,8 @@ export default function PricingCards({
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
                 <th className="p-4 pl-6">Feature Core Capability</th>
-                <th className="p-4 text-center">Free Telegram</th>
-                <th className="p-4 text-center">Starter</th>
-                <th className="p-4 text-center">Pro Signals</th>
-                <th className="p-4 text-center">Algo Edge</th>
-                <th className="p-4 text-center">Elite Smartflow</th>
+                <th className="p-4 text-center">Indicator + Scanner VIP</th>
+                <th className="p-4 text-center">SFA Gold Research</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -198,48 +195,21 @@ export default function PricingCards({
                 <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/20 text-slate-700 dark:text-slate-300">
                   <td className="p-4 pl-6 font-medium text-slate-900 dark:text-white">{row.feature}</td>
                   
-                  {/* Free */}
+                  {/* Indicator VIP */}
                   <td className="p-4 text-center">
-                    {typeof row.free === "boolean" ? (
-                      row.free ? <Check className="h-4 w-4 text-emerald-500 mx-auto" /> : <X className="h-4 w-4 text-rose-500 mx-auto" />
+                    {typeof row.indicatorVip === "boolean" ? (
+                      row.indicatorVip ? <Check className="h-4 w-4 text-emerald-500 mx-auto" /> : <X className="h-4 w-4 text-rose-500 mx-auto" />
                     ) : (
-                      <span className="font-medium text-slate-600 dark:text-slate-400">{row.free}</span>
+                      <span className="font-semibold text-blue-600 dark:text-blue-400">{row.indicatorVip}</span>
                     )}
                   </td>
 
-                  {/* Starter */}
+                  {/* Gold Research */}
                   <td className="p-4 text-center">
-                    {typeof row.starter === "boolean" ? (
-                      row.starter ? <Check className="h-4 w-4 text-emerald-500 mx-auto" /> : <X className="h-4 w-4 text-rose-500 mx-auto" />
+                    {typeof row.goldResearch === "boolean" ? (
+                      row.goldResearch ? <Check className="h-4 w-4 text-emerald-500 mx-auto" /> : <X className="h-4 w-4 text-rose-500 mx-auto" />
                     ) : (
-                      <span className="font-medium text-slate-600 dark:text-slate-400">{row.starter}</span>
-                    )}
-                  </td>
-
-                  {/* Pro */}
-                  <td className="p-4 text-center">
-                    {typeof row.pro === "boolean" ? (
-                      row.pro ? <Check className="h-4 w-4 text-emerald-500 mx-auto" /> : <X className="h-4 w-4 text-rose-500 mx-auto" />
-                    ) : (
-                      <span className="font-semibold text-blue-600 dark:text-blue-400">{row.pro}</span>
-                    )}
-                  </td>
-
-                  {/* Algo Edge */}
-                  <td className="p-4 text-center">
-                    {typeof row.algo === "boolean" ? (
-                      row.algo ? <Check className="h-4 w-4 text-emerald-500 mx-auto" /> : <X className="h-4 w-4 text-rose-500 mx-auto" />
-                    ) : (
-                      <span className="font-semibold text-indigo-600 dark:text-indigo-400">{row.algo}</span>
-                    )}
-                  </td>
-
-                  {/* Elite */}
-                  <td className="p-4 text-center">
-                    {typeof row.elite === "boolean" ? (
-                      row.elite ? <Check className="h-4 w-4 text-emerald-500 mx-auto" /> : <X className="h-4 w-4 text-rose-500 mx-auto" />
-                    ) : (
-                      <span className="font-bold text-amber-600 dark:text-amber-400">{row.elite}</span>
+                      <span className="font-bold text-amber-600 dark:text-amber-400">{row.goldResearch}</span>
                     )}
                   </td>
                 </tr>
