@@ -18,12 +18,14 @@ import {
   X,
   Shield,
   UserCog,
+  LineChart,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
 
 const NAV_ITEMS = [
   { label: "Checkout Leads", href: "/admin", icon: Users },
-  { label: "User Management", href: "/admin/users", icon: UserCog },
+  // { label: "User Management", href: "/admin/users", icon: UserCog },
+  { label: "Indicator Repository", href: "/admin/indicators", icon: LineChart },
   { label: "Promoters", href: "/admin/promoters", icon: Megaphone },
   { label: "Plans & Subscriptions", href: "/admin/plans", icon: CreditCard },
 ];

@@ -80,7 +80,7 @@ export const authOptions: NextAuthOptions = {
                 name: user.name || "",
                 image: user.image || "",
                 userType: "CLIENT",
-                planType: "FREE",
+                planType: "APPLIED",
               },
             });
           }

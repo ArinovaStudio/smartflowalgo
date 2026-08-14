@@ -47,7 +47,7 @@ export async function POST(req: Request) {
         experience: experience || "Beginner",
         interest: interest || "Gold",
         userType: "CLIENT",
-        planType: "FREE",
+        planType: "APPLIED",
       },
     });
 

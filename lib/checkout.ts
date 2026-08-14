@@ -17,6 +17,11 @@ export const checkoutFormSchema = z.object({
     .min(3, "TradingView ID must be at least 3 characters")
     .max(30, "TradingView ID is too long")
     .regex(TRADINGVIEW_ID_REGEX, "Only letters, numbers, _, . and - are allowed"),
+  broker: z
+    .string()
+    .trim()
+    .min(2, "Broker name must be at least 2 characters")
+    .max(50, "Broker name is too long"),
   mobile: z
     .string()
     .trim()
@@ -30,7 +35,7 @@ export type CheckoutFormValues = z.infer<typeof checkoutFormSchema>;
 
 // Full payload sent to POST /api/save-data (form values + plan context)
 export const saveDataSchema = checkoutFormSchema.extend({
-  planType: z.enum(["FREE", "PAID"]),
+  planType: z.enum(["APPLIED", "PAID"]),
 });
 
 export type SaveDataInput = z.infer<typeof saveDataSchema>;

@@ -129,6 +129,8 @@ export async function PUT(
       interest,
       version,
       discount,
+      broker,
+      renualDate,
     } = body;
 
     const dataToUpdate: any = {};
@@ -187,6 +189,8 @@ export async function PUT(
     if (interest !== undefined) dataToUpdate.interest = interest;
     if (version !== undefined) dataToUpdate.version = version;
     if (discount !== undefined) dataToUpdate.discount = discount !== null && discount !== "" ? Number(discount) : 0;
+    if (broker !== undefined) dataToUpdate.broker = broker ? String(broker).trim() : null;
+    if (renualDate !== undefined) dataToUpdate.renualDate = renualDate ? new Date(renualDate) : null;
 
     const updatedUser = await prisma.user.update({
       where: { id },

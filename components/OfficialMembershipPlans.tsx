@@ -138,9 +138,9 @@ export default function OfficialMembershipPlans() {
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
-        className="relative overflow-hidden rounded-2xl bg-slate-100 dark:bg-zinc-950 p-px shadow-sm border border-slate-200/80 dark:border-white/10"
+        // className="relative overflow-hidden rounded-2xl bg-slate-100 dark:bg-zinc-950 p-px shadow-sm border border-slate-200/80 dark:border-white/10"
       >
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-2xl bg-white/95 dark:bg-zinc-950/95 px-6 py-4 backdrop-blur-md">
+        {/* <div className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-2xl bg-white/95 dark:bg-zinc-950/95 px-6 py-4 backdrop-blur-md">
           <div className="flex items-center gap-3.5">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
               <Clock className="h-5 w-5" />
@@ -167,7 +167,7 @@ export default function OfficialMembershipPlans() {
             Claim Access Before Cutoff
             <ArrowRight className="h-4 w-4" />
           </a>
-        </div>
+        </div> */}
       </motion.div>
 
       {/* ==================== HERO HEADER ==================== */}
@@ -368,19 +368,19 @@ export default function OfficialMembershipPlans() {
 
       {/* ==================== SPECIAL INCLUDED / LAUNCH PERKS ==================== */}
       <div className="pt-8 space-y-6">
-        <div className="text-center space-y-2">
+        {/* <div className="text-center space-y-2">
           <span className="text-xs font-extrabold uppercase tracking-wider text-sky-600 dark:text-sky-400">
             Ecosystem Offers
           </span>
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">
             Special Launch Perks & Automated Trading
           </h2>
-        </div>
+        </div> */}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           
           {/* Card A: $20 -> $10,000 Challenge */}
-          <motion.div
+          {/* <motion.div
             initial={{ opacity: 0, y: 16 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -420,10 +420,10 @@ export default function OfficialMembershipPlans() {
                 <ArrowRight className="h-3.5 w-3.5" />
               </a>
             </div>
-          </motion.div>
+          </motion.div> */}
 
           {/* Card B: SFA EA */}
-          <motion.div
+          {/* <motion.div
             initial={{ opacity: 0, y: 16 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -460,13 +460,13 @@ export default function OfficialMembershipPlans() {
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
-          </motion.div>
+          </motion.div> */}
 
         </div>
       </div>
 
       {/* ==================== GLOBAL PAID INCLUSIONS STRIP ==================== */}
-      <motion.div
+      {/* <motion.div
         initial={{ opacity: 0, scale: 0.98 }}
         whileInView={{ opacity: 1, scale: 1 }}
         viewport={{ once: true }}
@@ -508,10 +508,10 @@ export default function OfficialMembershipPlans() {
             <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">24/7 Priority Support</span>
           </div>
         </div>
-      </motion.div>
+      </motion.div> */}
 
       {/* ==================== FOOTER SIGN-OFF ==================== */}
-      <motion.div
+      {/* <motion.div
         initial={{ opacity: 0 }}
         whileInView={{ opacity: 1 }}
         viewport={{ once: true }}
@@ -523,7 +523,7 @@ export default function OfficialMembershipPlans() {
         <span className="text-xs font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
           SMARTFLOWALGO — SFA
         </span>
-      </motion.div>
+      </motion.div> */}
     </div>
   );
 }

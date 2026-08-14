@@ -13,8 +13,10 @@ datasource db {
 }
 
 enum AccType {
+  APPLIED
   PAID
-  FREE
+  REJECTED
+  AWAITED
 }
 
 enum PaymentProvider {
@@ -27,6 +29,7 @@ enum PaymentStatus {
   FAILED
   CANCELLED
 }
+
 enum UserType {
   CLIENT
   INFULENCER
@@ -34,26 +37,30 @@ enum UserType {
 }
 
 model User {
-  id            String    @id @default(nanoid())
-  srn           Int       @unique @default(autoincrement())
-  name          String?
-  tradingViewId String?   @unique
-  mobile        String?   @unique
-  email         String    @unique
-  password      String?
-  image         String?
-  experience    String?
-  interest      String?
-  planType      AccType?
-  version       String?   @default("Latest")
-  userType      UserType  @default(CLIENT)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  discount      Int?
-  accounts      Account[]
-  sessions      Session[]
-  payments      Payment[] @relation("PaymentClient")
-  referrals     Payment[] @relation("PaymentPromoter")
+  id              String                @id @default(nanoid())
+  srn             Int                   @unique @default(autoincrement())
+  name            String?
+  tradingViewId   String?               @unique
+  broker          String?
+  mobile          String?               @unique
+  email           String                @unique
+  password        String?
+  image           String?
+  experience      String?
+  interest        String?
+  planType        AccType?              @default(APPLIED)
+  planDate        DateTime?
+  version         String?               @default("Latest")
+  userType        UserType              @default(CLIENT)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  discount        Int?
+  renualDate      DateTime?
+  accounts        Account[]
+  sessions        Session[]
+  payments        Payment[]             @relation("PaymentClient")
+  referrals       Payment[]             @relation("PaymentPromoter")
+  indicatorAccess UserIndicatorAccess[]
 
   @@index([email])
   @@index([mobile])
@@ -109,47 +116,199 @@ model Payment {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  userId            String?
-  user              User?         @relation("PaymentClient", fields: [userId], references: [id])
+  userId String?
+  user   User?   @relation("PaymentClient", fields: [userId], references: [id])
 
-  promoterId        String?
-  promoter          User?         @relation("PaymentPromoter", fields: [promoterId], references: [id])
+  promoterId String?
+  promoter   User?   @relation("PaymentPromoter", fields: [promoterId], references: [id])
 
   @@index([userId])
   @@index([promoterId])
 }
 
 model Plan {
-  id                String   @id @default(cuid())
-  name              String
-  subtitle          String?
-  badge             String?
-  isHighlight       Boolean  @default(false)
+  id          String  @id @default(cuid())
+  name        String
+  subtitle    String?
+  badge       String?
+  isHighlight Boolean @default(false)
 
   // Pricing mode
-  hasCycles         Boolean  @default(false)
+  hasCycles Boolean @default(false)
 
   // Single price fields (used when hasCycles = false)
-  price             Int?
-  billingPeriod     String?  // e.g., "3 days access" or "month"
+  price         Int?
+  billingPeriod String? // e.g., "3 days access" or "month"
 
   // Multi-cycle pricing fields (used when hasCycles = true)
-  monthlyPrice      Int?     // e.g. 3499
-  quarterlyPrice    Int?     // e.g. 9000
-  quarterlyDiscount String?  // e.g. "Save ₹1,497"
-  yearlyPrice       Int?     // e.g. 29499
-  yearlyDiscount    String?  // e.g. "Save ₹12,489"
+  monthlyPrice      Int? // e.g. 3499
+  quarterlyPrice    Int? // e.g. 9000
+  quarterlyDiscount String? // e.g. "Save ₹1,497"
+  yearlyPrice       Int? // e.g. 29499
+  yearlyDiscount    String? // e.g. "Save ₹12,489"
 
   // Features list
-  features          String[]
+  features String[]
 
   // Custom CTA text
-  buttonText        String?
+  buttonText String?
 
   // Order & Status
-  order             Int      @default(0)
-  isActive          Boolean  @default(true)
+  order    Int     @default(0)
+  isActive Boolean @default(true)
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  indicators PlanIndicator[]
+}
+
+enum IndicatorStatus {
+  DRAFT
+  TESTING
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum VersionStatus {
+  DRAFT
+  TESTING
+  RELEASED
+  RETIRED
+}
+
+enum AccessStatus {
+  GRANTED
+  REVOKED
+  EXPIRED
+}
+
+model IndicatorCategory {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  slug        String  @unique
+  description String?
+  icon        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  indicators Indicator[]
+}
+
+model Indicator {
+  id String @id @default(cuid())
+
+  name        String
+  slug        String  @unique
+  description String?
+
+  symbol    String?
+  market    String? // e.g., "Crypto", "Forex", "Stocks", "Indices"
+  timeframe String? // e.g., "5m", "15m", "1H", "4H", "1D"
+
+  categoryId String?
+  category   IndicatorCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  status         IndicatorStatus @default(DRAFT)
+  currentVersion String?         @default("v1.0.0")
+
+  // TradingView Metadata
+  tradingViewId    String? // Script ID in TradingView
+  tradingViewUrl   String? // URL to script page
+  publisher        String? // Author handle
+  distributionType String? @default("INVITE_ONLY") // INVITE_ONLY, PRIVATE, PUBLIC
+
+  isPremium Boolean @default(true)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions     IndicatorVersion[]
+  planAccess   PlanIndicator[]
+  userAccess   UserIndicatorAccess[]
+  activityLogs IndicatorActivityLog[]
+
+  @@index([slug])
+  @@index([status])
+  @@index([categoryId])
+}
+
+model IndicatorVersion {
+  id String @id @default(cuid())
+
+  indicatorId String
+  indicator   Indicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+
+  version      String // e.g., "1.0.0", "2.4.1"
+  script       String? @db.Text
+  fileUrl      String?
+  releaseNotes String? @db.Text
+
+  status     VersionStatus @default(RELEASED)
+  releasedAt DateTime?     @default(now())
+
+  createdAt DateTime @default(now())
+
+  @@unique([indicatorId, version])
+  @@index([indicatorId])
+}
+
+model PlanIndicator {
+  id String @id @default(cuid())
+
+  planId      String
+  indicatorId String
+
+  plan      Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  indicator Indicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([planId, indicatorId])
+  @@index([planId])
+  @@index([indicatorId])
+}
+
+model UserIndicatorAccess {
+  id String @id @default(cuid())
+
+  userId      String
+  indicatorId String
+
+  status AccessStatus @default(GRANTED)
+
+  grantedAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  grantedBy String? // Admin user ID or email
+  reason    String? // e.g., "Manual Admin Grant", "Promotional Access"
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  indicator Indicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, indicatorId])
+  @@index([userId])
+  @@index([indicatorId])
+  @@index([status])
+}
+
+model IndicatorActivityLog {
+  id String @id @default(cuid())
+
+  indicatorId String
+  indicator   Indicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+
+  action      String // e.g., "CREATED", "UPDATED_VERSION", "ASSIGNED_PLAN", "GRANTED_ACCESS", "REVOKED_ACCESS", "STATUS_CHANGE"
+  details     String? @db.Text
+  performedBy String? // Admin identifier
+
+  createdAt DateTime @default(now())
+
+  @@index([indicatorId])
 }

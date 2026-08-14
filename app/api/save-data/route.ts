@@ -82,10 +82,12 @@ async function listLeads(searchParams: URLSearchParams) {
   const search = searchParams.get("search")?.trim() || undefined;
 
   const planTypeParam = searchParams.get("planType");
-  const planType =
-    planTypeParam === "FREE" || planTypeParam === "PAID"
-      ? planTypeParam
-      : undefined;
+  const planType: Prisma.EnumAccTypeNullableFilter<"User">["equals"] | undefined =
+    planTypeParam === "PAID"
+      ? "PAID"
+      : planTypeParam === "FREE" || planTypeParam === "APPLIED"
+        ? "APPLIED"
+        : undefined;
 
   const sortByParam = searchParams.get("sortBy");
   const sortBy: SortableField = SORTABLE_FIELDS.includes(
@@ -109,6 +111,7 @@ async function listLeads(searchParams: URLSearchParams) {
             { email: { contains: search, mode: "insensitive" } },
             { mobile: { contains: search, mode: "insensitive" } },
             { tradingViewId: { contains: search, mode: "insensitive" } },
+            { broker: { contains: search, mode: "insensitive" } },
           ],
         }
       : {}),
@@ -162,8 +165,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { name, tradingViewId, mobile, email, planType, version } = parsed.data;
-
+  const { name, tradingViewId, broker, mobile, email, planType, version } = parsed.data;
+  
   try {
     const existing = await prisma.user.findFirst({
       where: { OR: [{ email }, { mobile }, { tradingViewId }] },
@@ -184,7 +187,7 @@ export async function POST(req: NextRequest) {
     }
 
     const lead = await prisma.user.create({
-      data: { name, tradingViewId, mobile, email, planType, version },
+      data: { name, tradingViewId, broker, mobile, email, planType, version },
       select: { id: true, srn: true, createdAt: true },
     });
 
@@ -243,4 +246,42 @@ export async function DELETE(req: NextRequest) {
     where: { id },
   });
   return NextResponse.json({ data: "success" }, { status: 200 });
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { id, planType, renualDate, broker } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    const dataToUpdate: Prisma.UserUpdateInput = {};
+
+    if (planType !== undefined) {
+      dataToUpdate.planType = planType;
+    }
+
+    if (renualDate !== undefined) {
+      dataToUpdate.renualDate = renualDate ? new Date(renualDate) : null;
+    }
+
+    if (broker !== undefined) {
+      dataToUpdate.broker = broker ? String(broker).trim() : null;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: dataToUpdate,
+    });
+
+    return NextResponse.json({ success: true, data: updated }, { status: 200 });
+  } catch (err) {
+    console.error("[save-data][PATCH] failed to update lead:", err);
+    return NextResponse.json(
+      { error: "Failed to update lead" },
+      { status: 500 },
+    );
+  }
 }

@@ -38,7 +38,7 @@ export default function AdminContentWrapper({
       className="pt-14 min-h-screen bg-slate-100 dark:bg-slate-950 transition-all duration-300"
       style={{ marginLeft: collapsed ? "4rem" : "16rem" }}
     >
-      <div className="p-6 sm:p-8 mx-auto max-w-7xl">{children}</div>
+      <div className="p-4 sm:p-6 lg:p-8 mx-auto w-full max-w-[1750px]">{children}</div>
     </main>
   );
 }

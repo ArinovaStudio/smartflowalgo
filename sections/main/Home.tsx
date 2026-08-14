@@ -11,14 +11,16 @@ import LogoMarquee from "../other/Marquee";
 import { images } from "@/data/marquee";
 import GoldIndicatorAbout from "../other/About";
 import ProductShowcase from "./Showcase";
+import OfficialMembershipPlans from "@/components/OfficialMembershipPlans";
 
 function Home() {
   return (
     <div className="space-y-20 pb-20">
       {/* HERO SECTION */}
-      {/* <Hero /> */}
-      <FreePlanBanner />
-      <PricingBanner />
+      <Hero />
+      <OfficialMembershipPlans />
+      {/* <FreePlanBanner /> */}
+      {/* <PricingBanner /> */}
       <div className="">
       <LogoMarquee 
       logos={images}

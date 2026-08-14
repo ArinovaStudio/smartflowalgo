@@ -29,7 +29,7 @@ import v7 from "@/assets/entry.jpeg"
 
 
 
-  const versionOptions = [
+const versionOptions = [
   {
     name: "SmartflowAlgo AK PRO VIP V7.0 Final",
     image: v7.src,
@@ -46,11 +46,11 @@ import v7 from "@/assets/entry.jpeg"
     name: "SmartflowAlgo AK PRO VIP V2.7",
     image: v2.src,
   },
-    {
+  {
     name: "SmartflowAlgo Gold Zones V1.2",
     image: v1.src,
   },
-    {
+  {
     name: "SmartflowAlgo Reversal Entry Zones",
     image: entry.src,
   },
@@ -66,6 +66,7 @@ type FieldErrors = Partial<Record<FieldName, string>>;
 const EMPTY_FORM: CheckoutFormValues = {
   name: "",
   tradingViewId: "",
+  broker: "",
   mobile: "",
   email: "",
   promoterId: "",
@@ -75,6 +76,7 @@ const EMPTY_FORM: CheckoutFormValues = {
 const FIELD_LABELS: Record<FieldName, string> = {
   name: "Name",
   tradingViewId: "TradingView ID",
+  broker: "Broker",
   mobile: "Mobile number",
   email: "Email address",
   promoterId: "Referral code (optional)",
@@ -94,7 +96,7 @@ const SUPPORT_TELEGRAM_URL = "https://t.me/smartflowtrading";
 const MOBILE_MAX_LENGTH = 16;
 
 export default function CheckoutForm({ plan }: CheckoutFormProps) {
-  const [discount, setDiscount] = useState<{discount: number, name: string}>()
+  const [discount, setDiscount] = useState<{ discount: number, name: string }>()
   const [form, setForm] = useState<CheckoutFormValues>(EMPTY_FORM);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [checking, setChecking] = useState<Partial<Record<FieldName, boolean>>>(
@@ -120,13 +122,13 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
     const req = await fetch(`/api/promoters/code?id=${code}`)
     if (req.status === 400) {
       const data = await req.json()
-        setErrors((prev) => ({
-          ...prev,
-          "promoterId": `${data.data}`,
-        }));
+      setErrors((prev) => ({
+        ...prev,
+        "promoterId": `${data.data}`,
+      }));
     }
     if (req.status === 200) {
-      const {data} = await req.json()
+      const { data } = await req.json()
       console.log(data);
       setDiscount({
         discount: data.discount,
@@ -220,9 +222,6 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
         }
       }
 
-      // ============================
-      // FREE PLAN
-      // ============================
       async function saveUser() {
         const saveRes = await fetch("/api/save-data", {
           method: "POST",
@@ -231,7 +230,7 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
           },
           body: JSON.stringify({
             ...clientData,
-            planType: plan.type,
+            planType: "APPLIED",
           }),
         });
 
@@ -259,65 +258,37 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
               saveData.error ?? "Something went wrong. Please try again.",
             );
           }
+          return null;
         }
 
         return saveData.id;
       }
 
-      if (!isPaid) {
-        await saveUser();
-        window.location.href = TELEGRAM_CHANNEL_URL;
-        return;
+      const userId = await saveUser();
+      if (!userId) return;
+
+      const messageLines = [
+        "Hello SmartFlowAlgo,",
+        "",
+        "I would like to get access. Here are my details:",
+        `• Name: ${clientData.name}`,
+        `• TradingView ID: ${clientData.tradingViewId}`,
+        `• Broker: ${clientData.broker}`,
+        `• Mobile: ${clientData.mobile}`,
+        `• Email: ${clientData.email}`,
+        `• Plan: ${planTitle}${isPaid ? ` (₹${amount.toLocaleString("en-IN")})` : " (Free Plan)"}`,
+      ];
+
+      if (clientData.version) {
+        messageLines.push(`• Version: ${clientData.version}`);
       }
 
-      // ============================
-      // PAID PLAN
-      // ============================
-
-      if (isPaid) {
-        // First creation of payment gateway
-        const res = await fetch("/api/payments/create", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            amount: amount,
-            description: "One price. Everything unlocked.",
-          }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const status = data.status;
-          const checkoutId = data.id;
-          const checkoutRef = data.checkout_reference;
-
-          const userId = await saveUser();
-
-          if (!userId) return;
-
-          const payment = await fetch("/api/payments/db", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              amount: amount,
-              currency: data.currency,
-              checkoutId,
-              checkoutReference: checkoutRef,
-              status: status,
-              userId,
-              promoterId: normalizedPromoterId,
-            }),
-          });
-
-          if (payment.ok) {
-            window.location.href = data.hosted_checkout_url;
-          }
-        }
+      if (normalizedPromoterId) {
+        messageLines.push(`• Referral Code: ${normalizedPromoterId}`);
       }
+
+      const telegramMessage = encodeURIComponent(messageLines.join("\n"));
+      window.location.href = `${SUPPORT_TELEGRAM_URL}?text=${telegramMessage}`;
     } catch (error) {
       console.error(error);
 
@@ -334,23 +305,23 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
   const planTitle = plan.name
     ? plan.name
     : plan.price === 3499
-    ? "INDICATOR + SCANNER VIP"
-    : plan.price === 9000
-    ? "INDICATOR + SCANNER VIP (3 Months)"
-    : plan.price === 29499
-    ? "INDICATOR + SCANNER VIP (Yearly)"
-    : plan.price === 6000
-    ? "SFA GOLD RESEARCH"
-    : isPaid
-    ? "SFA VIP Membership"
-    : "SFA Free Plan";
+      ? "INDICATOR + SCANNER VIP"
+      : plan.price === 9000
+        ? "INDICATOR + SCANNER VIP (3 Months)"
+        : plan.price === 29499
+          ? "INDICATOR + SCANNER VIP (Yearly)"
+          : plan.price === 6000
+            ? "SFA GOLD RESEARCH"
+            : isPaid
+              ? "SFA VIP Membership"
+              : "SFA Free Plan";
 
   const billingCycleText =
     plan.price === 9000
       ? "3 months"
       : plan.billingCycle === "yearly"
-      ? "year"
-      : "month";
+        ? "year"
+        : "month";
 
   useEffect(() => {
     const base = plan.price ?? 3499;
@@ -373,11 +344,10 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
       <div className="order-2 lg:order-1">
         <div className="sticky top-8 rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm sm:p-8">
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-              isPaid
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${isPaid
                 ? "bg-cyan-500/10 text-cyan-300 ring-1 ring-inset ring-cyan-500/30"
                 : "bg-slate-500/10 text-slate-300 ring-1 ring-inset ring-slate-500/30"
-            }`}
+              }`}
           >
             <Sparkles className="h-3.5 w-3.5" />
             {isPaid ? "Paid plan" : "Free plan"}
@@ -409,17 +379,9 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
           )}
 
           <div className="mt-6 space-y-3 border-t border-white/10 pt-6 text-sm text-slate-400">
-            {isPaid ? (
-              <p>
-                You&apos;ll be redirected to our secure payment gateway after
-                this step.
-              </p>
-            ) : (
-              <p>
-                You&apos;ll get an invite link to our Telegram channel right
-                after this step.
-              </p>
-            )}
+            <p>
+              You&apos;ll be redirected to Telegram to connect with our team and get instant access.
+            </p>
           </div>
 
           {/* Contact support */}
@@ -475,6 +437,16 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
               autoComplete="off"
             />
 
+            <Field
+              label={FIELD_LABELS.broker}
+              name="broker"
+              value={form.broker}
+              onChange={(v) => updateField("broker", v)}
+              error={errors.broker}
+              placeholder="e.g. Zerodha, Angel One, Exness, Dhan"
+              autoComplete="off"
+            />
+
             {/* Mobile number — international, with country picker (India default/top) */}
             <div>
               <label
@@ -504,9 +476,8 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
                       ? "mobile-error"
                       : undefined,
                   }}
-                  containerClass={`smartflow-phone-input${
-                    errors.mobile ? " smartflow-phone-input--error" : ""
-                  }`}
+                  containerClass={`smartflow-phone-input${errors.mobile ? " smartflow-phone-input--error" : ""
+                    }`}
                 />
                 {checking.mobile && (
                   <Loader2 className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-500" />
@@ -535,10 +506,10 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
               error={errors.email}
               placeholder="you@example.com"
               autoComplete="email"
-            />            
-            
-<div className="space-y-2">
-{/* <div className="space-y-2">
+            />
+
+            <div className="space-y-2">
+              {/* <div className="space-y-2">
   <label className="text-sm font-medium">
     {FIELD_LABELS.version}
   </label>
@@ -551,12 +522,12 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
     onChange={(value) => updateField("version", value)}
   />
 </div> */}
-  {errors.version && (
-    <p className="text-sm text-destructive">
-      {errors.version}
-    </p>
-  )}
-</div>
+              {errors.version && (
+                <p className="text-sm text-destructive">
+                  {errors.version}
+                </p>
+              )}
+            </div>
 
 
 
@@ -593,10 +564,8 @@ export default function CheckoutForm({ plan }: CheckoutFormProps) {
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Processing...
                 </>
-              ) : isPaid ? (
-                "Continue to payment"
               ) : (
-                "Join the Telegram channel"
+                "Continue to Telegram"
               )}
             </button>
           </form>
@@ -734,11 +703,10 @@ function Field({
           onBlur={(e) => onBlur?.(e.target.value)}
           aria-invalid={!!error}
           aria-describedby={error ? `${name}-error` : undefined}
-          className={`w-full rounded-lg border bg-slate-900/60 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 ${
-            error
+          className={`w-full rounded-lg border bg-slate-900/60 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 ${error
               ? "border-red-500/50 focus:ring-red-500/40"
               : "border-white/10 focus:border-sky-500/50 focus:ring-sky-500/30"
-          }`}
+            }`}
         />
         {checking && (
           <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-500" />

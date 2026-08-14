@@ -54,7 +54,7 @@ export default function Header() {
 
   return (
     <>
-      <div className="bg-gradient-to-r from-indigo-700 via-blue-600 to-indigo-800 text-white py-2 text-center text-xs font-semibold px-4 flex items-center justify-center gap-2 select-none">
+      {/* <div className="bg-gradient-to-r from-indigo-700 via-blue-600 to-indigo-800 text-white py-2 text-center text-xs font-semibold px-4 flex items-center justify-center gap-2 select-none">
         <Sparkles className="h-4 w-4 text-yellow-300 animate-pulse shrink-0" />
         <span>
           LAUNCH BONUS: Free Premium Telegram Community access for the first 200
@@ -66,7 +66,7 @@ export default function Header() {
         >
           Claim Now &rarr;
         </button>
-      </div>
+      </div> */}
       <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 dark:border-slate-800 bg-white/95 dark:bg-[#050B1D] backdrop-blur-md transition-colors">
         <div className="mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
           {/* Brand Logo */}
