@@ -126,6 +126,29 @@ export default function OfficialMembershipPlans() {
     return CheckCircle2;
   }
 
+  // Add this helper above the component (or inside, before the return)
+function getAdaptiveGridClass(count: number): string {
+  switch (count) {
+    case 0:
+      return "grid-cols-1";
+    case 1:
+      // Full screen width, single centered card
+      return "grid-cols-1 max-w-2xl mx-auto";
+    case 2:
+      // Half / half
+      return "grid-cols-1 sm:grid-cols-2 max-w-5xl mx-auto";
+    case 3:
+      // Third / third / third
+      return "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
+    case 4:
+      // 2x2 — wraps to a new line after 2
+      return "grid-cols-1 sm:grid-cols-2 max-w-5xl mx-auto";
+    default:
+      // 5+ falls back to a clean 3-col wrap
+      return "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
+  }
+}
+
   return (
     <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-14">
       {/* Background Ambient Glows */}
@@ -212,7 +235,7 @@ export default function OfficialMembershipPlans() {
 
       {/* ==================== PRICING CARDS DYNAMIC GRID ==================== */}
       {!loading && (
-        <div id="vip-plans" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 items-stretch pt-4">
+        <div id="vip-plans"  className={`grid gap-6 lg:gap-8 items-stretch pt-4 ${getAdaptiveGridClass(plans.length)}`}>
           {plans.map((plan, index) => {
             const currentCycle = cycleState[plan.id] || "monthly";
 
