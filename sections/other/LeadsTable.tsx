@@ -150,10 +150,10 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
       prev.map((l) =>
         l.id === leadId
           ? {
-              ...l,
-              planType: newPlanType,
-              renualDate: updatedRenualDate,
-            }
+            ...l,
+            planType: newPlanType,
+            renualDate: updatedRenualDate,
+          }
           : l
       )
     );
@@ -379,10 +379,9 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
                         value={currentStatus}
                         disabled={updatingId === lead.id}
                         onChange={(e) => handleStatusChange(lead.id, e.target.value as AccType)}
-                        className={`text-[11px] font-semibold rounded-lg px-2 py-1 border transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-500/30 ${
-                          statusColorMap[currentStatus] ||
+                        className={`text-[11px] font-semibold rounded-lg px-2 py-1 border transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-500/30 ${statusColorMap[currentStatus] ||
                           "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700"
-                        } ${updatingId === lead.id ? "opacity-50 cursor-wait" : ""}`}
+                          } ${updatingId === lead.id ? "opacity-50 cursor-wait" : ""}`}
                       >
                         <option value="APPLIED" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">APPLIED</option>
                         <option value="PAID" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">PAID</option>
@@ -400,7 +399,21 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
                     })}
                   </td>
                   <td className="px-3 py-3 whitespace-nowrap">
-                    {renderRenewalBadge(lead.renualDate)}
+                    {/* {renderRenewalBadge(lead.renualDate)} */}
+                    {
+                      currentStatus === "PAID"
+                        ? renderRenewalBadge(lead.renualDate)
+                        : currentStatus === "APPLIED"
+                          ? "-"
+                          : new Date(lead.updatedAt).toLocaleString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            hour12: true,
+                          })
+                    }
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-1.5">
