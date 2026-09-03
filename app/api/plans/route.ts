@@ -20,11 +20,45 @@ export async function GET(req: NextRequest) {
     let plans = await prisma.plan.findMany({
       where: whereClause,
       orderBy: { order: "asc" },
+      include: {
+        indicators: {
+          include: {
+            indicator: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                currentVersion: true,
+                distributionType: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     // If no plans exist in DB, auto-seed default 3 plans
     if (plans.length === 0 && (!fetchAll || !isAdmin)) {
-      plans = await seedDefaultPlans();
+      await seedDefaultPlans();
+      plans = await prisma.plan.findMany({
+        where: whereClause,
+        orderBy: { order: "asc" },
+        include: {
+          indicators: {
+            include: {
+              indicator: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  currentVersion: true,
+                  distributionType: true,
+                },
+              },
+            },
+          },
+        },
+      });
     }
 
     return NextResponse.json({ success: true, data: plans });

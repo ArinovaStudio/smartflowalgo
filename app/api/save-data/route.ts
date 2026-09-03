@@ -251,7 +251,7 @@ export async function DELETE(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
-    const { id, planType, renualDate, broker } = body;
+    const { id, planType, planId, renualDate, broker } = body;
 
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -263,18 +263,93 @@ export async function PATCH(req: NextRequest) {
       dataToUpdate.planType = planType;
     }
 
-    if (renualDate !== undefined) {
-      dataToUpdate.renualDate = renualDate ? new Date(renualDate) : null;
+    if (planId !== undefined) {
+      dataToUpdate.plan = planId ? { connect: { id: planId } } : { disconnect: true };
+    }
+
+    const targetRenewalDate = renualDate
+      ? new Date(renualDate)
+      : planType === "PAID"
+      ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      : undefined;
+
+    if (targetRenewalDate !== undefined) {
+      dataToUpdate.renualDate = targetRenewalDate;
     }
 
     if (broker !== undefined) {
       dataToUpdate.broker = broker ? String(broker).trim() : null;
     }
 
+    // ── Step 1: Update user record ─────────────────────────────────────────────
+    // NOTE: We intentionally avoid $transaction(callback) here because Neon
+    // uses pgbouncer in transaction-pooling mode, which causes P2028
+    // ("Unable to start a transaction in the given time").
+    // Sequential queries are safe for this use-case.
     const updated = await prisma.user.update({
       where: { id },
       data: dataToUpdate,
+      include: {
+        plan: {
+          select: {
+            id: true,
+            name: true,
+            badge: true,
+          },
+        },
+      },
     });
+
+    const activePlanId = planId || updated.planId;
+
+    // ── Step 2: Sync indicator access ──────────────────────────────────────────
+    if (planType === "PAID" && activePlanId) {
+      // Fetch all indicators for this plan
+      const plan = await prisma.plan.findUnique({
+        where: { id: activePlanId },
+        include: {
+          indicators: {
+            select: { indicatorId: true },
+          },
+        },
+      });
+
+      if (plan && plan.indicators.length > 0) {
+        // Upsert all plan indicators as GRANTED in parallel
+        await Promise.all(
+          plan.indicators.map((pi) =>
+            prisma.userIndicatorAccess.upsert({
+              where: {
+                userId_indicatorId: {
+                  userId: id,
+                  indicatorId: pi.indicatorId,
+                },
+              },
+              update: {
+                status: "GRANTED",
+                expiresAt: targetRenewalDate ?? null,
+                grantedBy: "Admin Plan Assignment",
+                reason: `Assigned via Plan: ${plan.name}`,
+              },
+              create: {
+                userId: id,
+                indicatorId: pi.indicatorId,
+                status: "GRANTED",
+                expiresAt: targetRenewalDate ?? null,
+                grantedBy: "Admin Plan Assignment",
+                reason: `Assigned via Plan: ${plan.name}`,
+              },
+            })
+          )
+        );
+      }
+    } else if (planType === "REJECTED" || planType === "APPLIED") {
+      // Revoke all active grants when status is moved away from PAID
+      await prisma.userIndicatorAccess.updateMany({
+        where: { userId: id, status: "GRANTED" },
+        data: { status: "REVOKED" },
+      });
+    }
 
     return NextResponse.json({ success: true, data: updated }, { status: 200 });
   } catch (err) {

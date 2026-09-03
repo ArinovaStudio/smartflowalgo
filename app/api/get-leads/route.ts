@@ -56,6 +56,32 @@ export async function GET(request: Request) {
         orderBy,
         skip,
         take: pageSize,
+        include: {
+          plan: {
+            select: {
+              id: true,
+              name: true,
+              badge: true,
+              price: true,
+              monthlyPrice: true,
+            },
+          },
+          indicatorAccess: {
+            include: {
+              indicator: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  currentVersion: true,
+                  distributionType: true,
+                  isPremium: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        },
       }),
       prisma.user.count({
         where,

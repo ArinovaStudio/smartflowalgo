@@ -49,6 +49,8 @@ model User {
   experience      String?
   interest        String?
   planType        AccType?              @default(APPLIED)
+  planId          String?
+  plan            Plan?                 @relation(fields: [planId], references: [id], onDelete: SetNull)
   planDate        DateTime?
   version         String?               @default("Latest")
   userType        UserType              @default(CLIENT)
@@ -65,6 +67,7 @@ model User {
   @@index([email])
   @@index([mobile])
   @@index([tradingViewId])
+  @@index([planId])
 }
 
 model Account {
@@ -161,6 +164,7 @@ model Plan {
   updatedAt DateTime @updatedAt
 
   indicators PlanIndicator[]
+  users      User[]
 }
 
 enum IndicatorStatus {
