@@ -12,8 +12,8 @@ export default function Footer() {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Hide footer inside admin panel
-  if (pathname?.startsWith("/admin")) return null;
+  // Hide footer inside admin panel or user terminal
+  if (pathname?.startsWith("/admin") || pathname?.startsWith("/user")) return null;
 
   function goToCheckout() {
     const tok = getToken("FREE")

@@ -25,8 +25,8 @@ export default function Header() {
   const [theme, setTheme] = useState<theme>("dark");
   const { data: session, status } = useSession();
 
-  // Hide the public navbar entirely inside the admin panel
-  if (pathname?.startsWith("/admin")) return null;
+  // Hide the public navbar entirely inside the admin panel or user terminal
+  if (pathname?.startsWith("/admin") || pathname?.startsWith("/user")) return null;
 
   const onThemeChange = () => {
     let newTheme: theme = "dark";

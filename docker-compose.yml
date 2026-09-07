@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # 1. MetaTrader 5 Container (Wine + noVNC + RPyC Port 8001)
+  # ==========================================
+  metatrader5:
+    image: gmag11/metatrader5_vnc:latest
+    container_name: mt5_server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"   # noVNC Web Interface
+      - "8001:8001"   # Python Bridge API Port (RPyC for mt5linux)
+    environment:
+      - CUSTOM_USER=admin
+      - PASSWORD=YourSecurePassword123
+    volumes:
+      - mt5_data:/config
+
+  # ==========================================
+  # 2. SmartFlowAlgo Python Middleman Bridge
+  # ==========================================
+  bridge:
+    build:
+      context: ./backend-data
+      dockerfile: Dockerfile
+    container_name: smartflowalgo-bridge
+    restart: unless-stopped
+    ports:
+      - "8000:8000"   # REST & WebSocket for LightweightChart
+    environment:
+      - PORT=8000
+      - RPYC_HOST=metatrader5
+      - RPYC_PORT=8001
+    depends_on:
+      - metatrader5
+
+volumes:
+  mt5_data:

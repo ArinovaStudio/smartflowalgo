@@ -1,0 +1,68 @@
+version: "3.8"
+
+services:
+  # ==========================================
+  # Next.js Development (Hot Reloading)
+  # ==========================================
+  frontend-dev:
+    image: node:20-alpine
+    container_name: smartflowalgo-frontend-dev
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://smartflow:smartflowpass@postgres:5432/smartflowalgo?schema=public
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=development_secret_key_12345
+    command: sh -c "npm install && npx prisma generate && npm run dev"
+    depends_on:
+      - postgres
+      - mt5-bridge-dev
+    networks:
+      - smartflow-net
+
+  # ==========================================
+  # MT5 Bridge Development (Hot Reloading)
+  # ==========================================
+  mt5-bridge-dev:
+    image: node:20-alpine
+    container_name: smartflowalgo-bridge-dev
+    working_dir: /app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend-data:/app
+      - /app/node_modules
+    command: sh -c "npm install && node --watch server.js"
+    networks:
+      - smartflow-net
+
+  # ==========================================
+  # PostgreSQL Database
+  # ==========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: smartflowalgo-db-dev
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=smartflow
+      - POSTGRES_PASSWORD=smartflowpass
+      - POSTGRES_DB=smartflowalgo
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    networks:
+      - smartflow-net
+
+networks:
+  smartflow-net:
+    driver: bridge
+
+volumes:
+  postgres_dev_data:
+    driver: local

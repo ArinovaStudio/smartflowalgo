@@ -130,7 +130,7 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white flex overflow-x-hidden">
+    <div className="h-screen w-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white flex overflow-hidden">
       {/* ── Toast Notification ── */}
       <AnimatePresence>
         {appliedToast && (
@@ -138,7 +138,7 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="fixed top-18 right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-emerald-500 text-white text-xs font-bold shadow-2xl"
+            className="fixed top-14 right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-emerald-500 text-white text-xs font-bold shadow-2xl"
           >
             <Sparkles className="h-4 w-4" />
             <span>{appliedToast}</span>
@@ -147,15 +147,15 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
       </AnimatePresence>
 
       {/* ═══════════════════════════════════════════
-          DESKTOP & MOBILE SIDEBAR NAVIGATION
+          COMPACT & COLLAPSIBLE SIDEBAR NAVIGATION (NO OVERLAP)
       ═══════════════════════════════════════════ */}
       <aside
-        className={`fixed top-0 left-0 z-40 h-screen flex flex-col border-r border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-950 transition-all duration-300 ${
-          sidebarCollapsed ? "w-20" : "w-64"
-        } ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
+        className={`h-full shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-950 transition-all duration-300 z-40 ${
+          sidebarCollapsed ? "w-14" : "w-52"
+        } ${mobileMenuOpen ? "fixed inset-y-0 left-0 z-50 w-52 translate-x-0 shadow-2xl flex" : "hidden md:flex"}`}
       >
         {/* Sidebar Header */}
-        <div className="flex h-16 items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800/80">
+        <div className="flex h-12 items-center justify-between px-3 border-b border-slate-200 dark:border-slate-800/80">
           {!sidebarCollapsed ? (
             <div className="flex items-center gap-2.5">
               <div className="h-8 w-8 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-500 flex items-center justify-center font-black text-sm">
@@ -252,9 +252,9 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
             <LineChart className="h-4 w-4 shrink-0" />
             {!sidebarCollapsed && (
               <div className="flex-1 flex items-center justify-between">
-                <span>TradingView Chart</span>
+                <span>Live Trading Terminal</span>
                 <span className="px-1.5 py-0.2 rounded-md bg-emerald-400/20 text-emerald-300 text-[9px] font-extrabold uppercase">
-                  Live
+                  MT5 Live
                 </span>
               </div>
             )}
@@ -325,41 +325,50 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
       )}
 
       {/* ═══════════════════════════════════════════
-          MAIN CONTENT AREA
+          MAIN CONTENT AREA (NO OVERLAP, FULL VIEWPORT)
       ═══════════════════════════════════════════ */}
-      <div
-        className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ${
-          sidebarCollapsed ? "md:ml-20" : "md:ml-64"
-        }`}
-      >
+      <div className="flex-1 h-full flex flex-col min-w-0 overflow-hidden">
         {/* Top Navbar */}
-        <header className="h-14 flex items-center justify-between px-4 sm:px-6 border-b border-slate-200 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md sticky top-0 z-30">
-          <div className="flex items-center gap-3">
+        <header className="h-12 flex items-center justify-between px-3 sm:px-4 border-b border-slate-200 dark:border-slate-800/80 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md shrink-0 z-30">
+          <div className="flex items-center gap-2.5">
+            {/* Sidebar Collapse Toggle (Makes Chart View Bigger!) */}
             <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900"
+              type="button"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className="hidden md:flex p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors cursor-pointer"
+              title={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
             >
-              <Menu size={20} />
+              {sidebarCollapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="md:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer"
+            >
+              <Menu size={18} />
             </button>
 
             <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-slate-900 dark:text-white">
-                {activeTab === "dashboard" ? "Dashboard" : "TradingView Live Chart"}
+              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                {activeTab === "dashboard" ? "Trader Dashboard" : "SmartFlow Live Terminal"}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             {activeTab === "dashboard" ? (
               <button
+                type="button"
                 onClick={() => setActiveTab("chart")}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold shadow-md shadow-sky-500/20 transition-all cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold shadow-md shadow-sky-500/20 transition-all cursor-pointer"
               >
                 <LineChart className="h-3.5 w-3.5" />
                 <span>Open Chart</span>
               </button>
             ) : (
               <button
+                type="button"
                 onClick={() => setActiveTab("dashboard")}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 text-xs font-semibold transition-all cursor-pointer"
               >
@@ -371,7 +380,7 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
         </header>
 
         {/* ── Main Tab Views ── */}
-        <main className="flex-1 p-3 sm:p-5">
+        <main className={`flex-1 min-h-0 ${activeTab === "chart" ? "p-1 sm:p-1.5 overflow-hidden flex flex-col" : "p-4 sm:p-6 overflow-y-auto"}`}>
           {/* ========================================================
               TAB 1: TRADER DASHBOARD VIEW
           ======================================================== */}
@@ -584,11 +593,11 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
               TAB 2: PURE FULL-FLEDGED TRADINGVIEW CHART PLATFORM
           ======================================================== */}
           {activeTab === "chart" && (
-            <div className="flex flex-col h-[calc(100vh-5.5rem)] space-y-2">
+            <div className="flex flex-col h-full w-full min-h-0 space-y-1.5 overflow-hidden">
               {/* ── Top Indicator Selection Bar (Multiple Indicators Toggle) ── */}
               {indicators.length > 0 && (
-                <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/90 shadow-sm shrink-0">
-                  <div className="flex items-center gap-2 overflow-x-auto py-0.5">
+                <div className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/90 shadow-sm shrink-0">
+                  <div className="flex items-center gap-2 overflow-x-auto py-0.5 scrollbar-none">
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
                       <Sparkles className="h-3.5 w-3.5 text-sky-500" />
                       <span>Custom Indicators:</span>
@@ -602,20 +611,20 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                           key={ind.id}
                           type="button"
                           onClick={() => toggleIndicatorSelection(ind.id, ind.name)}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap border ${
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap border ${
                             isSelected
                               ? "bg-sky-500 text-white border-sky-400 shadow-sm shadow-sky-500/30"
                               : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700"
                           }`}
                         >
                           <div
-                            className={`h-3.5 w-3.5 rounded flex items-center justify-center border ${
+                            className={`h-3 w-3 rounded flex items-center justify-center border ${
                               isSelected
                                 ? "bg-white text-sky-500 border-white"
                                 : "border-slate-400 dark:border-slate-500"
                             }`}
                           >
-                            {isSelected && <Check className="h-3 w-3 stroke-[3]" />}
+                            {isSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
                           </div>
                           <span>{ind.name}</span>
                         </button>
@@ -632,10 +641,10 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
               )}
 
               {/* ── Pure TradingView Advanced Chart Widget ── */}
-              <div className="flex-1 w-full h-full min-h-[550px]">
+              <div className="flex-1 w-full h-full min-h-0 overflow-hidden">
                 <TradingViewWidget
-                  symbol="FX:USDJPY"
-                  interval="1"
+                  symbol="XAUUSD"
+                  interval="1m"
                   theme={theme}
                   activeIndicators={activeIndicatorsList}
                 />
