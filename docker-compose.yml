@@ -46,7 +46,7 @@ services:
     ports:
       # PORT is defined in root .env (e.g. PORT=9086)
       # Both host and container use the same port value from .env
-      - "${PORT:-3000}:${PORT:-3000}"
+      - "${PORT:-3000}:9086"
     env_file:
       - .env
     environment:
