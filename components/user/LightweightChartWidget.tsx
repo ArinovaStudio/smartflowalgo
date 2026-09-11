@@ -73,6 +73,7 @@ import {
   Magnet,
 } from "lucide-react";
 import { PineScriptEngine, CandleData, TranspiledIndicatorOutput } from "@/lib/transpiler";
+import SymbolSelectModal from "./SymbolSelectModal";
 
 export interface DrawingItem {
   id: string;
@@ -397,7 +398,6 @@ export default function LightweightChartWidget({
   // UI Modals & Popovers
   const [symbolModalOpen, setSymbolModalOpen] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState("");
-  const [symbolCategoryFilter, setSymbolCategoryFilter] = useState("All");
   const [sandboxOpen, setSandboxOpen] = useState(false);
   const [sandboxCode, setSandboxCode] = useState(BUILTIN_SCRIPTS.supertrend);
 
@@ -414,7 +414,6 @@ export default function LightweightChartWidget({
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const drawingSvgRef = useRef<SVGSVGElement | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // WebSocket Connection State
   const [wsConnected, setWsConnected] = useState(false);
@@ -835,39 +834,6 @@ export default function LightweightChartWidget({
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
   }, [selectedDrawingId, symbolModalOpen, activeTool]);
 
-  useEffect(() => {
-    if (symbolModalOpen) {
-      setTimeout(() => {
-        searchInputRef.current?.focus();
-        if (symbolSearch) {
-          searchInputRef.current?.setSelectionRange(symbolSearch.length, symbolSearch.length);
-        }
-      }, 50);
-    }
-  }, [symbolModalOpen]);
-
-  // Filtered Symbols list for search modal
-  const symbolCategories = useMemo(() => {
-    const cats = new Set<string>(["All"]);
-    symbolsList.forEach((s) => {
-      if (s.category) cats.add(s.category);
-    });
-    return Array.from(cats);
-  }, [symbolsList]);
-
-  const filteredSymbols = useMemo(() => {
-    return symbolsList.filter((s) => {
-      const matchCat = symbolCategoryFilter === "All" || s.category?.toLowerCase() === symbolCategoryFilter.toLowerCase();
-      if (!matchCat) return false;
-      if (!symbolSearch.trim()) return true;
-      const q = symbolSearch.toLowerCase();
-      return (
-        s.symbol?.toLowerCase().includes(q) ||
-        s.name?.toLowerCase().includes(q) ||
-        s.category?.toLowerCase().includes(q)
-      );
-    });
-  }, [symbolSearch, symbolCategoryFilter, symbolsList]);
 
   const activeSymbolInfo = useMemo(() => {
     if (!symbol) {
@@ -1039,11 +1005,17 @@ export default function LightweightChartWidget({
     setSelectedDrawingId(null);
   };
 
-  const handleSelectSymbolFromModal = (sName: string) => {
+  const handleCloseSymbolModal = useCallback(() => {
+    setSymbolModalOpen(false);
+    setSymbolSearch("");
+  }, []);
+
+  const handleSelectSymbolFromModal = useCallback((sName: string) => {
     setSymbol(sName);
     setSymbolModalOpen(false);
+    setSymbolSearch("");
     hasFittedInitialSnapshot.current = false;
-  };
+  }, []);
 
   const handleSelectTimeframe = (tfVal: string) => {
     setTimeframe(tfVal);
@@ -1875,143 +1847,16 @@ export default function LightweightChartWidget({
       </div>
 
       {/* ═══════════════════════════════════════════
-          POP-UP MODAL: PAIR SEARCH & SELECTION
+          HIGH-PERFORMANCE DYNAMIC SYMBOL SEARCH MODAL
       ═══════════════════════════════════════════ */}
-      {isMounted &&
-        symbolModalOpen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-150"
-            onClick={() => setSymbolModalOpen(false)}
-          >
-            <div
-              className="bg-white dark:bg-[#1e222d] border border-slate-200 dark:border-[#2a2e39] rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="p-4 border-b border-slate-100 dark:border-[#2a2e39] flex items-center justify-between gap-4">
-                <div>
-                  <h3 className="font-extrabold text-base text-slate-900 dark:text-white flex items-center gap-2">
-                    <span>Select Trading Pair</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-[#2962FF]/15 text-[#2962FF] border border-[#2962FF]/30">
-                      {symbolsList.length} Symbols
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-[#787b86] mt-0.5">
-                    Real-time MetaTrader 5 broker feed
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSymbolModalOpen(false)}
-                  className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-[#2a2e39] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* Search Input */}
-              <div className="p-4 border-b border-slate-100 dark:border-[#2a2e39] bg-slate-50/50 dark:bg-[#131722]/50 space-y-3">
-                <div className="relative">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    value={symbolSearch}
-                    onChange={(e) => setSymbolSearch(e.target.value)}
-                    placeholder="Search by pair or asset (e.g. EURUSD, XAUUSD, US30)..."
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-[#2a2e39] bg-white dark:bg-[#131722] text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-[#2962FF] shadow-xs"
-                  />
-                  {symbolSearch && (
-                    <button
-                      type="button"
-                      onClick={() => setSymbolSearch("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-200"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Category Pills */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                  {symbolCategories.map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setSymbolCategoryFilter(cat)}
-                      className={`px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                        symbolCategoryFilter === cat
-                          ? "bg-[#2962FF] text-white shadow-xs"
-                          : "bg-white dark:bg-[#1e222d] text-slate-600 dark:text-[#787b86] hover:text-slate-900 dark:hover:text-white border border-slate-200/80 dark:border-[#2a2e39]"
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Symbols List */}
-              <div className="flex-1 overflow-y-auto p-3 divide-y divide-slate-100 dark:divide-[#2a2e39]/50">
-                {filteredSymbols.length > 0 ? (
-                  filteredSymbols.map((s) => {
-                    const isSelected = symbol === s.symbol;
-                    return (
-                      <button
-                        key={s.symbol}
-                        type="button"
-                        onClick={() => handleSelectSymbolFromModal(s.symbol)}
-                        className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs transition-colors cursor-pointer group text-left ${
-                          isSelected
-                            ? "bg-[#2962FF]/15 text-[#2962FF] border border-[#2962FF]/30 font-bold"
-                            : "hover:bg-slate-50 dark:hover:bg-[#2a2e39]/60 text-slate-800 dark:text-[#d1d4dc]"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="text-[10px] px-2 py-1 rounded-lg font-mono font-bold bg-slate-100 dark:bg-[#131722] text-slate-600 dark:text-[#787b86] border border-slate-200 dark:border-[#2a2e39]">
-                            {s.category || "Forex"}
-                          </span>
-                          <div>
-                            <p className="font-extrabold text-sm leading-tight text-slate-900 dark:text-white">
-                              {s.symbol}
-                            </p>
-                            <p className="text-[11px] text-slate-500 dark:text-[#787b86] truncate max-w-xs sm:max-w-sm">
-                              {s.name && s.name !== s.symbol ? s.name : "Active Pair"}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-4 text-right">
-                          {s.spread !== undefined && (
-                            <div className="hidden sm:block text-right">
-                              <span className="text-[10px] text-slate-400 dark:text-[#787b86]">Spread</span>
-                              <p className="font-mono font-bold text-slate-700 dark:text-[#d1d4dc]">{s.spread}</p>
-                            </div>
-                          )}
-                          {s.bid !== undefined && s.bid > 0 && (
-                            <div className="text-right">
-                              <span className="text-[10px] text-slate-400 dark:text-[#787b86]">Bid / Ask</span>
-                              <p className="font-mono font-bold text-slate-800 dark:text-white">
-                                {s.bid.toFixed(s.digits || 4)}
-                              </p>
-                            </div>
-                          )}
-                          <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-                        </div>
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="p-8 text-center text-xs text-slate-500 dark:text-[#787b86]">
-                    <Search className="h-8 w-8 mx-auto text-slate-400 mb-2 opacity-40" />
-                    <p className="font-semibold text-sm">No symbols matching "{symbolSearch}"</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+      <SymbolSelectModal
+        isOpen={symbolModalOpen}
+        onClose={handleCloseSymbolModal}
+        onSelect={handleSelectSymbolFromModal}
+        symbolsList={symbolsList}
+        currentSymbol={symbol}
+        initialSearch={symbolSearch}
+      />
 
       {/* Pine Script Sandbox Modal */}
       {isMounted &&

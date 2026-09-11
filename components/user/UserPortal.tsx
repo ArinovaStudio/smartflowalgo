@@ -19,6 +19,16 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
+  User,
+  Mail,
+  Phone,
+  Calendar,
+  Copy,
+  CheckCircle2,
+  Shield,
+  ExternalLink,
+  Award,
+  Clock,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import TradingViewWidget from "./TradingViewWidget";
@@ -55,6 +65,11 @@ interface UserPortalProps {
     tradingViewId: string | null;
     broker?: string | null;
     mobile?: string | null;
+    userType?: string | null;
+    image?: string | null;
+    experience?: string | null;
+    interest?: string | null;
+    createdAt?: string | null;
     planType: string | null;
     planDate?: string | null;
     renualDate?: string | null;
@@ -69,10 +84,18 @@ interface UserPortalProps {
 }
 
 export default function UserPortal({ user, indicators }: UserPortalProps) {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "chart">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "chart" | "profile">("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("dark");
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const handleCopy = (text: string, fieldName: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldName);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
 
   // Selected multiple indicators for chart
   const [selectedIndicatorIds, setSelectedIndicatorIds] = useState<string[]>(() => {
@@ -81,14 +104,25 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
   const [appliedToast, setAppliedToast] = useState<string | null>(null);
 
   useEffect(() => {
-    const isDark = document.documentElement.classList.contains("dark");
-    setTheme(isDark ? "dark" : "light");
+    const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null;
+    const initialTheme = savedTheme || (document.documentElement.classList.contains("dark") ? "dark" : "dark");
+    setTheme(initialTheme);
+    if (initialTheme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
   }, []);
 
   const toggleTheme = () => {
     const nextTheme = theme === "dark" ? "light" : "dark";
     setTheme(nextTheme);
-    document.documentElement.classList.toggle("dark", nextTheme === "dark");
+    localStorage.setItem("theme", nextTheme);
+    if (nextTheme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
   };
 
   const isPaid = user.planType === "PAID";
@@ -191,12 +225,17 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
           </button>
         </div>
 
-        {/* User Card */}
+        {/* User Card (Clickable to view Profile) */}
         <div className="p-3 border-b border-slate-200 dark:border-slate-800/60">
           <div
-            className={`flex items-center gap-3 p-2.5 rounded-xl bg-slate-100/70 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/50 ${
+            onClick={() => {
+              setActiveTab("profile");
+              setMobileMenuOpen(false);
+            }}
+            className={`flex items-center gap-3 p-2.5 rounded-xl bg-slate-100/70 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/50 hover:border-sky-500/50 dark:hover:border-sky-500/50 cursor-pointer transition-all ${
               sidebarCollapsed ? "justify-center" : ""
-            }`}
+            } ${activeTab === "profile" ? "ring-2 ring-sky-500/40" : ""}`}
+            title="View User Profile"
           >
             <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-md">
               {(user.name || user.email || "T").charAt(0).toUpperCase()}
@@ -252,12 +291,27 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
             <LineChart className="h-4 w-4 shrink-0" />
             {!sidebarCollapsed && (
               <div className="flex-1 flex items-center justify-between">
-                <span>Live Trading Terminal</span>
+                <span>Live Terminal</span>
                 <span className="px-1.5 py-0.2 rounded-md bg-emerald-400/20 text-emerald-300 text-[9px] font-extrabold uppercase">
                   MT5 Live
                 </span>
               </div>
             )}
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab("profile");
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === "profile"
+                ? "bg-sky-500 text-white shadow-lg shadow-sky-500/20"
+                : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white"
+            } ${sidebarCollapsed ? "justify-center px-2" : ""}`}
+          >
+            <User className="h-4 w-4 shrink-0" />
+            {!sidebarCollapsed && <span>My Profile</span>}
           </button>
 
           {/* Quick Active Indicators Tag */}
@@ -351,22 +405,27 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
 
             <div className="flex items-center gap-2">
               <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                {activeTab === "dashboard" ? "Trader Dashboard" : "SmartFlow Live Terminal"}
+                {activeTab === "dashboard"
+                  ? "Trader Dashboard"
+                  : activeTab === "chart"
+                  ? "SmartFlow Live Terminal"
+                  : "User Profile & Account"}
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {activeTab === "dashboard" ? (
+            {activeTab !== "chart" && (
               <button
                 type="button"
                 onClick={() => setActiveTab("chart")}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold shadow-md shadow-sky-500/20 transition-all cursor-pointer"
               >
                 <LineChart className="h-3.5 w-3.5" />
-                <span>Open Chart</span>
+                <span>Live Chart</span>
               </button>
-            ) : (
+            )}
+            {activeTab !== "dashboard" && (
               <button
                 type="button"
                 onClick={() => setActiveTab("dashboard")}
@@ -374,6 +433,16 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
               >
                 <LayoutDashboard className="h-3.5 w-3.5" />
                 <span>Dashboard</span>
+              </button>
+            )}
+            {activeTab !== "profile" && (
+              <button
+                type="button"
+                onClick={() => setActiveTab("profile")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 text-xs font-semibold transition-all cursor-pointer"
+              >
+                <User className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Profile</span>
               </button>
             )}
           </div>
@@ -648,6 +717,367 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                   theme={theme}
                   activeIndicators={activeIndicatorsList}
                 />
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================
+              TAB 3: COMPREHENSIVE USER PROFILE SECTION
+          ======================================================== */}
+          {activeTab === "profile" && (
+            <div className="max-w-5xl mx-auto space-y-6 pb-12">
+              {/* Profile Header Banner */}
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-slate-900 via-slate-950 to-indigo-950 p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+                <div className="absolute right-0 top-0 -mt-10 -mr-10 w-80 h-80 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+                  <div className="flex items-center gap-5">
+                    <div className="relative">
+                      {user.image ? (
+                        <img
+                          src={user.image}
+                          alt={user.name || "User"}
+                          className="w-20 h-20 rounded-2xl border-2 border-sky-400 object-cover shadow-lg"
+                        />
+                      ) : (
+                        <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-sky-500 via-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-black shadow-lg">
+                          {(user.name || user.email || "U").charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 border-2 border-slate-950 flex items-center justify-center">
+                        <Check className="w-3 h-3 text-white stroke-[3]" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                          {user.name || "Member Trader"}
+                        </h2>
+                        <span className="px-2.5 py-0.5 rounded-full bg-sky-500/20 border border-sky-500/30 text-sky-400 text-xs font-bold uppercase tracking-wider">
+                          {user.userType || "CLIENT"}
+                        </span>
+                        {user.plan && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase">
+                            {user.plan.name}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs sm:text-sm text-slate-300 mt-1 flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-sky-400" />
+                        <span>{user.email}</span>
+                      </p>
+                      {user.createdAt && (
+                        <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Member since {new Date(user.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric", day: "numeric" })}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("chart")}
+                      className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold shadow-lg shadow-sky-500/25 transition-all cursor-pointer flex items-center gap-2"
+                    >
+                      <LineChart className="w-4 h-4" />
+                      <span>Live Terminal</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("dashboard")}
+                      className="px-4 py-2 rounded-xl border border-white/20 hover:bg-white/10 text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-2"
+                    >
+                      <LayoutDashboard className="w-4 h-4" />
+                      <span>Dashboard</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Profile Details Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {/* 1. Personal & Contact Information */}
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 p-5 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2 text-slate-900 dark:text-white font-extrabold text-sm pb-3 border-b border-slate-100 dark:border-slate-800/80">
+                    <User className="w-4 h-4 text-sky-500" />
+                    <span>Personal Details</span>
+                  </div>
+
+                  <div className="space-y-3.5 text-xs">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Full Name
+                      </span>
+                      <p className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
+                        {user.name || "Not provided"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Email Address
+                      </span>
+                      <div className="flex items-center justify-between mt-0.5">
+                        <span className="font-semibold text-slate-800 dark:text-slate-200 truncate mr-2">
+                          {user.email}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(user.email, "email")}
+                          className="text-slate-400 hover:text-sky-500 transition-colors p-1 cursor-pointer"
+                          title="Copy Email"
+                        >
+                          {copiedField === "email" ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Phone / Mobile
+                      </span>
+                      <p className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
+                        {user.mobile || "Not registered"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Trading Experience
+                      </span>
+                      <p className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
+                        {user.experience || "Intermediate / Systematic Trader"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Primary Market Focus
+                      </span>
+                      <p className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
+                        {user.interest || "Gold (XAUUSD), Forex & Crypto"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Trading Accounts & Broker Integration */}
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 p-5 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2 text-slate-900 dark:text-white font-extrabold text-sm pb-3 border-b border-slate-100 dark:border-slate-800/80">
+                    <LineChart className="w-4 h-4 text-emerald-500" />
+                    <span>Trading & Brokerage</span>
+                  </div>
+
+                  <div className="space-y-3.5 text-xs">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        TradingView Username
+                      </span>
+                      <div className="flex items-center justify-between mt-0.5 p-2 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800">
+                        <span className="font-mono font-bold text-sky-600 dark:text-sky-400 truncate mr-2">
+                          {user.tradingViewId || "Pending link"}
+                        </span>
+                        {user.tradingViewId && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(user.tradingViewId!, "tv")}
+                            className="text-slate-400 hover:text-sky-500 p-0.5 cursor-pointer"
+                            title="Copy TradingView ID"
+                          >
+                            {copiedField === "tv" ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Broker Integration
+                      </span>
+                      <p className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
+                        {user.broker || "MetaTrader 5 (MT5 Broker Feed)"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Terminal Live Status
+                      </span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                          WebSocket MT5 Active
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Account ID
+                      </span>
+                      <div className="flex items-center justify-between mt-0.5">
+                        <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400 truncate mr-2">
+                          {user.id}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(user.id, "uid")}
+                          className="text-slate-400 hover:text-sky-500 transition-colors p-1 cursor-pointer"
+                          title="Copy User ID"
+                        >
+                          {copiedField === "uid" ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Subscription & Membership Plan */}
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 p-5 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2 text-slate-900 dark:text-white font-extrabold text-sm pb-3 border-b border-slate-100 dark:border-slate-800/80">
+                    <CreditCard className="w-4 h-4 text-purple-500" />
+                    <span>Membership Details</span>
+                  </div>
+
+                  <div className="space-y-3.5 text-xs">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Membership Plan
+                      </span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="font-extrabold text-slate-900 dark:text-white text-sm">
+                          {user.plan?.name || "Free Access / Direct Grant"}
+                        </span>
+                        {user.plan?.badge && (
+                          <span className="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-500 text-[10px] font-bold uppercase">
+                            {user.plan.badge}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Account Access Status
+                      </span>
+                      <div className="mt-1">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase ${
+                            isPaid
+                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                              : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                          }`}
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>{user.planType || "APPLIED"}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Activated Date
+                      </span>
+                      <p className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
+                        {user.planDate
+                          ? new Date(user.planDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                          : "Immediate Registration"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Next Renewal / Expiry
+                      </span>
+                      <div className="flex items-center justify-between mt-0.5">
+                        <p className="font-semibold text-slate-800 dark:text-slate-200">
+                          {user.renualDate
+                            ? new Date(user.renualDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                            : "Lifetime / Continuous"}
+                        </p>
+                        {daysLeft !== null && (
+                          <span className="px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-500 font-extrabold text-[10px]">
+                            {daysLeft} Days Left
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Assigned Indicators & Algorithms */}
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800/80">
+                  <div className="flex items-center gap-2 text-slate-900 dark:text-white font-extrabold text-sm">
+                    <Sparkles className="w-4 h-4 text-sky-500" />
+                    <span>My Algorithm Access ({indicators.length})</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("chart")}
+                    className="text-xs font-bold text-sky-500 hover:text-sky-400 transition-colors cursor-pointer"
+                  >
+                    Launch in Chart &rarr;
+                  </button>
+                </div>
+
+                {indicators.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {indicators.map((ind) => (
+                      <div
+                        key={ind.id}
+                        className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/50 flex flex-col justify-between space-y-3"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+                              {ind.name}
+                            </span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-500 font-bold shrink-0">
+                              {ind.currentVersion || "v1.0"}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
+                            {ind.description || "Systematic institutional trend and market-flow indicator."}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/60">
+                          <span className="text-[10px] font-semibold text-slate-400">
+                            {ind.distributionType || "TradingView & MT5"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleApplyAndLaunch(ind)}
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
+                          >
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>Open in Chart</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-8 text-center text-xs text-slate-400">
+                    No custom indicators currently assigned to this account.
+                  </div>
+                )}
               </div>
             </div>
           )}

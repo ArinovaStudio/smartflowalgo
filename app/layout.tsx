@@ -29,7 +29,25 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={cn(jetbrainsMono.variable, "font-sans", geist.variable)}>
+    <html lang="en" suppressHydrationWarning className={cn(jetbrainsMono.variable, "font-sans", geist.variable)}>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                const savedTheme = localStorage.getItem('theme');
+                if (savedTheme === 'light') {
+                  document.documentElement.classList.remove('dark');
+                } else {
+                  document.documentElement.classList.add('dark');
+                }
+              } catch (e) {
+                document.documentElement.classList.add('dark');
+              }
+            `,
+          }}
+        />
+      </head>
       <body suppressHydrationWarning className="antialiased min-h-screen dark:bg-gray-950 bg-white">
         <NextAuthProvider>
           <Header />
