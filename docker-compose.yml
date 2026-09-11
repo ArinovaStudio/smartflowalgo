@@ -9,13 +9,14 @@ services:
     container_name: mt5_server
     restart: unless-stopped
     ports:
-      - "3000:3000"   # noVNC Web Interface
-      - "8001:8001"   # Python Bridge API Port (RPyC for mt5linux)
+      - "3002:3000"   # noVNC Web Interface
+      - "8002:8001"   # Python Bridge API Port (RPyC for mt5linux)
     environment:
       - CUSTOM_USER=admin
       - PASSWORD=YourSecurePassword123
     volumes:
       - mt5_data:/config
+      - ./custom-init/00-fix-mt5linux.sh:/custom-cont-init.d/00-fix-mt5linux.sh
 
   # ==========================================
   # 2. SmartFlowAlgo Python Middleman Bridge
@@ -28,12 +29,30 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"   # REST & WebSocket for LightweightChart
-    environment:
-      - PORT=8000
-      - RPYC_HOST=metatrader5
-      - RPYC_PORT=8001
+    env_file:
+      - ./backend-data/.env
     depends_on:
       - metatrader5
+
+  # ==========================================
+  # 3. SmartFlowAlgo Next.js Frontend
+  # ==========================================
+  frontend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartflowalgo-frontend
+    restart: unless-stopped
+    ports:
+      # PORT is defined in root .env (e.g. PORT=9086)
+      # Both host and container use the same port value from .env
+      - "${PORT:-3000}:${PORT:-3000}"
+    env_file:
+      - .env
+    environment:
+      - NODE_OPTIONS=--no-network-family-autoselection
+    depends_on:
+      - bridge
 
 volumes:
   mt5_data:

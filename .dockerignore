@@ -1,5 +1,4 @@
 node_modules
-.next
 .git
 .github
 .gemini
@@ -8,7 +7,6 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 .env*.local
-.env
 Dockerfile
 docker-compose*.yml
 .DS_Store

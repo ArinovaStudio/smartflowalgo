@@ -11,11 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc curl && rm 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy application source
 COPY . ./
 
-ENV PORT=8000
-ENV RPYC_HOST=metatrader5
-ENV RPYC_PORT=8001
+# Copy the backend .env file so server.py can load it via python-dotenv
+COPY .env .env
 
 EXPOSE 8000
 

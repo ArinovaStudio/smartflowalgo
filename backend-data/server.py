@@ -43,7 +43,7 @@ PORT = int(os.environ.get("PORT", 8000))
 RPYC_HOST = os.environ.get("RPYC_HOST", os.environ.get("MT5_HOST", "127.0.0.1")).strip()
 if RPYC_HOST in ("localhost", ""):
     RPYC_HOST = "127.0.0.1"
-RPYC_PORT = int(os.environ.get("RPYC_PORT", os.environ.get("MT5_PORT", 8001)))
+RPYC_PORT = int(os.environ.get("RPYC_PORT", os.environ.get("MT5_PORT", 8002)))
 
 LOGIN = os.environ.get("MT5_LOGIN", "").strip()
 PASSWORD = os.environ.get("MT5_PASSWORD", "").strip()
