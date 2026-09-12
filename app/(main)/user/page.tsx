@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import UserPortal from "@/components/user/UserPortal";
+import Terminal from "../admin/terminal/page";
 
 export default async function UserDashboardPage() {
   const session = await getServerSession(authOptions);
@@ -142,13 +143,17 @@ export default async function UserDashboardPage() {
     renualDate: dbUser.renualDate?.toISOString() ?? null,
     plan: dbUser.plan
       ? {
-          id: dbUser.plan.id,
-          name: dbUser.plan.name,
-          badge: dbUser.plan.badge,
-          price: dbUser.plan.price,
-        }
+        id: dbUser.plan.id,
+        name: dbUser.plan.name,
+        badge: dbUser.plan.badge,
+        price: dbUser.plan.price,
+      }
       : null,
   };
 
-  return <UserPortal user={userData} indicators={indicators} />;
+  return (
+    <>
+      <UserPortal user={userData} indicators={indicators} />
+    </>
+  );
 }

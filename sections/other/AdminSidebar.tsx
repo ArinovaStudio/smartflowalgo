@@ -30,6 +30,7 @@ const NAV_ITEMS = [
   { label: "Indicator", href: "/admin/scripts", icon: FileCode },
   { label: "Promoters", href: "/admin/promoters", icon: Megaphone },
   { label: "Plans & Subscriptions", href: "/admin/plans", icon: CreditCard },
+  { label: "Live Terminal", href: "/admin/terminal", icon: LineChart },
 ];
 
 const SIDEBAR_KEY = "admin-sidebar-collapsed";
