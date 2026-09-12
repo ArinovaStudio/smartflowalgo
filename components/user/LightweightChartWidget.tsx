@@ -71,6 +71,7 @@ import {
   Lock,
   Unlock,
   Magnet,
+  Star,
 } from "lucide-react";
 import { PineScriptEngine, CandleData, TranspiledIndicatorOutput } from "@/lib/transpiler";
 import SymbolSelectModal from "./SymbolSelectModal";
@@ -154,6 +155,7 @@ interface ToolDef {
   name: string;
   icon: React.ComponentType<{ className?: string }>;
   description: string;
+  group?: string;
 }
 
 interface CategoryDef {
@@ -414,6 +416,42 @@ export default function LightweightChartWidget({
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const drawingSvgRef = useRef<SVGSVGElement | null>(null);
+  // Refs for toolbar flyout click-outside dismissal
+  const flyoutPanelRef = useRef<HTMLDivElement | null>(null);
+  const flyoutSidebarRef = useRef<HTMLDivElement | null>(null);
+  const [flyoutTop, setFlyoutTop] = useState<number>(8);
+  const [favorites, setFavorites] = useState<string[]>(() => [
+    "long_position",
+    "short_position",
+    "price_range",
+    "date_and_price",
+    "trendline",
+    "horizontal",
+    "fibonacci",
+    "rectangle",
+  ]);
+  const [categoryLastTool, setCategoryLastTool] = useState<Record<string, string>>({
+    cursors: "cursor",
+    trends: "trendline",
+    fib_gann: "fibonacci",
+    shapes: "brush",
+    annotations: "text",
+    patterns: "head_and_shoulders",
+    prediction: "long_position",
+    smc_ict: "fvg_bull",
+    icons: "icon_star",
+  });
+
+  // RAF references for 60/120fps ultra-smooth drawing without event loop choking
+  const rafMouseMoveRef = useRef<number | null>(null);
+  const pendingMousePosRef = useRef<{ x: number; y: number } | null>(null);
+
+  const toggleFavorite = (toolId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFavorites((prev) =>
+      prev.includes(toolId) ? prev.filter((id) => id !== toolId) : [...prev, toolId]
+    );
+  };
 
   // WebSocket Connection State
   const [wsConnected, setWsConnected] = useState(false);
@@ -464,6 +502,7 @@ export default function LightweightChartWidget({
         textColor: isDark ? "#d1d4dc" : "#131722",
         fontSize: 11,
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif",
+        attributionLogo: false,
       },
       grid: {
         vertLines: { color: isDark ? "rgba(42, 46, 57, 0.4)" : "rgba(226, 232, 240, 0.8)" },
@@ -1114,16 +1153,36 @@ export default function LightweightChartWidget({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    if (currentDrawing.type === "brush" || currentDrawing.type === "highlighter") {
-      setCurrentDrawing((prev) =>
-        prev ? { ...prev, endX: x, endY: y, points: [...(prev.points || []), { x, y }] } : null
-      );
-    } else {
-      setCurrentDrawing((prev) => (prev ? { ...prev, endX: x, endY: y } : null));
+    pendingMousePosRef.current = { x, y };
+
+    if (rafMouseMoveRef.current === null) {
+      rafMouseMoveRef.current = requestAnimationFrame(() => {
+        rafMouseMoveRef.current = null;
+        if (!pendingMousePosRef.current) return;
+        const { x: curX, y: curY } = pendingMousePosRef.current;
+
+        setCurrentDrawing((prev) => {
+          if (!prev) return null;
+          if (prev.type === "brush" || prev.type === "highlighter") {
+            return {
+              ...prev,
+              endX: curX,
+              endY: curY,
+              points: [...(prev.points || []), { x: curX, y: curY }],
+            };
+          }
+          return { ...prev, endX: curX, endY: curY };
+        });
+      });
     }
   };
 
   const handleSvgMouseUp = () => {
+    if (rafMouseMoveRef.current !== null) {
+      cancelAnimationFrame(rafMouseMoveRef.current);
+      rafMouseMoveRef.current = null;
+    }
+
     if (!currentDrawing) return;
 
     let finalDrawing = { ...currentDrawing };
@@ -1182,7 +1241,7 @@ export default function LightweightChartWidget({
       } else if (type === "text" || type === "note" || type === "callout") {
         finalDrawing.endX = x + 100;
         finalDrawing.endY = y + 30;
-        finalDrawing.label = prompt("Enter chart annotation text:", "Key Level / Reaction") || "Analysis Note";
+        finalDrawing.label = "Analysis Note";
       } else if (type.startsWith("icon_")) {
         finalDrawing.endX = x + 24;
         finalDrawing.endY = y + 24;
@@ -1246,6 +1305,23 @@ export default function LightweightChartWidget({
     setTimeframe(tfVal);
     hasFittedInitialSnapshot.current = false;
   };
+
+  // Close flyout when clicking outside the sidebar or flyout panel
+  useEffect(() => {
+    if (!activeCategoryFlyout) return;
+    const handleOutside = (e: MouseEvent) => {
+      const sidebar = flyoutSidebarRef.current;
+      const panel = flyoutPanelRef.current;
+      if (
+        sidebar && !sidebar.contains(e.target as Node) &&
+        panel && !panel.contains(e.target as Node)
+      ) {
+        setActiveCategoryFlyout(null);
+      }
+    };
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [activeCategoryFlyout]);
 
   return (
     <div
@@ -1326,7 +1402,8 @@ export default function LightweightChartWidget({
           {wsConnected && !wsError ? (
             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-medium">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>MT5 Live ({brokerInfo.server || "Port 8001"})</span>
+              <span>Server Live </span>
+              {/* ({brokerInfo.server || "Port 8001"}) */}
             </div>
           ) : (
             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px] font-medium">
@@ -1373,118 +1450,111 @@ export default function LightweightChartWidget({
           MAIN WORKSPACE: DOCKED PRO SIDEBAR + CHART
       ═══════════════════════════════════════════ */}
       <div className="relative flex-1 w-full h-full min-h-0 flex flex-row overflow-hidden">
-        {/* PRO DOCKED TOOLBAR (TradingView Charcoal Style w-11) */}
-        <div className="w-11 shrink-0 border-r border-slate-200 dark:border-[#2a2e39] bg-slate-50 dark:bg-[#131722] flex flex-col items-center py-1.5 gap-1 z-20 overflow-y-auto scrollbar-none select-none">
+        {/* PRO DOCKED TOOLBAR — TradingView-style narrow icon rail */}
+        <div
+          ref={flyoutSidebarRef}
+          className="w-11 shrink-0 border-r border-slate-200 dark:border-[#2a2e39] bg-slate-50 dark:bg-[#131722] flex flex-col items-center py-1.5 gap-0.5 z-20 overflow-y-auto select-none no-scrollbar"
+          style={{ scrollbarWidth: "none" }}
+        >
           {TOOL_CATEGORIES.map((cat) => {
-            const isCategoryActive = cat.tools.some((t) => t.id === activeTool);
-            const activeToolDef = cat.tools.find((t) => t.id === activeTool) || cat.tools[0];
-            const IconComp = isCategoryActive ? activeToolDef.icon : cat.icon;
+            const currentSelectedToolId = categoryLastTool[cat.id] || cat.tools[0].id;
+            const currentToolDef = cat.tools.find((t) => t.id === currentSelectedToolId) || cat.tools[0];
+            const isCategoryActive = activeTool === currentSelectedToolId || cat.tools.some((t) => t.id === activeTool);
+            const IconComp = currentToolDef.icon;
             const isFlyoutOpen = activeCategoryFlyout === cat.id;
 
             return (
-              <div key={cat.id} className="relative">
-                <button
-                  type="button"
-                  title={cat.name}
-                  onClick={() => {
-                    setActiveCategoryFlyout(isFlyoutOpen ? null : cat.id);
-                  }}
-                  className={`w-8 h-8 rounded-lg transition-all cursor-pointer flex items-center justify-center relative group ${isCategoryActive
-                      ? "bg-[#2962FF] text-white shadow-md shadow-blue-500/20"
-                      : "text-slate-600 dark:text-[#787b86] hover:bg-slate-200/70 dark:hover:bg-[#2a2e39] hover:text-slate-900 dark:hover:text-white"
-                    }`}
+              <div key={cat.id} className="relative w-full flex justify-center py-0.5">
+                <div
+                  className={`w-8 h-8 rounded-md flex items-center justify-center relative group transition-colors duration-100 ${
+                    isCategoryActive
+                      ? "bg-[#2962FF] text-white shadow-sm"
+                      : isFlyoutOpen
+                        ? "bg-slate-200 dark:bg-[#2a2e39] text-slate-900 dark:text-white"
+                        : "text-slate-500 dark:text-[#787b86] hover:bg-slate-200/80 dark:hover:bg-[#2a2e39] hover:text-slate-900 dark:hover:text-white"
+                  }`}
                 >
-                  <IconComp className="h-4 w-4" />
-                  <span className="absolute bottom-0 right-0 text-[6px] opacity-70">▾</span>
-                </button>
+                  {/* Main tool click activates tool */}
+                  <button
+                    type="button"
+                    title={currentToolDef.name}
+                    onClick={() => {
+                      setActiveTool(currentSelectedToolId);
+                    }}
+                    className="w-full h-full flex items-center justify-center cursor-pointer"
+                  >
+                    <IconComp className="h-4 w-4" />
+                  </button>
 
-                {/* Flyout Submenu for Category Tools (100+ tools accessible) */}
-                {isFlyoutOpen && (
-                  <div className="absolute left-full top-0 ml-1.5 w-72 rounded-2xl border border-slate-200 dark:border-[#2a2e39] bg-white dark:bg-[#1e222d] shadow-2xl p-1.5 z-[9999] space-y-1 animate-in fade-in slide-in-from-left-2 duration-150 backdrop-blur-xl">
-                    <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 dark:text-[#787b86] uppercase tracking-wider border-b border-slate-100 dark:border-[#2a2e39] flex items-center justify-between">
-                      <span>{cat.name}</span>
-                      <span className="text-[9px] text-[#2962FF] font-mono font-bold">{cat.tools.length} Tools</span>
-                    </div>
-                    <div className="max-h-80 overflow-y-auto space-y-0.5 py-1 pr-0.5">
-                      {cat.tools.map((tool) => {
-                        const TIcon = tool.icon;
-                        const isSelected = activeTool === tool.id;
-                        return (
-                          <button
-                            key={tool.id}
-                            type="button"
-                            onClick={() => {
-                              setActiveTool(tool.id);
-                              setActiveCategoryFlyout(null);
-                            }}
-                            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs transition-colors cursor-pointer text-left ${isSelected
-                                ? "bg-[#2962FF] text-white font-bold"
-                                : "text-slate-700 dark:text-[#d1d4dc] hover:bg-slate-100 dark:hover:bg-[#2a2e39]"
-                              }`}
-                          >
-                            <TIcon className="h-4 w-4 shrink-0" />
-                            <div className="truncate">
-                              <p className="font-semibold leading-tight text-[11px]">{tool.name}</p>
-                              {tool.description && (
-                                <p
-                                  className={`text-[9px] truncate ${isSelected ? "text-blue-100" : "text-slate-400 dark:text-[#787b86]"
-                                    }`}
-                                >
-                                  {tool.description}
-                                </p>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                  {/* Corner arrow to open flyout menu */}
+                  <button
+                    type="button"
+                    title={`More ${cat.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const btnRect = e.currentTarget.getBoundingClientRect();
+                      const parentRect = flyoutSidebarRef.current?.getBoundingClientRect();
+                      if (parentRect) {
+                        const relTop = btnRect.top - parentRect.top;
+                        setFlyoutTop(Math.max(4, Math.min(relTop - 8, 220)));
+                      }
+                      setActiveCategoryFlyout(isFlyoutOpen ? null : cat.id);
+                    }}
+                    className={`absolute bottom-0 right-0 w-3 h-3 flex items-center justify-center cursor-pointer rounded-br-md text-[7px] leading-none opacity-60 hover:opacity-100 ${
+                      isCategoryActive ? "text-white" : "text-slate-400 dark:text-[#787b86]"
+                    }`}
+                  >
+                    ▾
+                  </button>
+                </div>
               </div>
             );
           })}
 
-          <div className="w-5 h-px bg-slate-200 dark:bg-[#2a2e39] my-1" />
+          {/* Divider */}
+          <div className="w-5 h-px bg-slate-200 dark:bg-[#2a2e39] my-1 shrink-0" />
 
-          {/* Stay in Drawing Mode Lock Button */}
+          {/* Stay in Drawing Mode Lock */}
           <button
             type="button"
-            title={stayInDrawMode ? "Stay in Drawing Mode: ON (Click to toggle)" : "Stay in Drawing Mode: OFF"}
+            title={stayInDrawMode ? "Stay in Drawing Mode: ON" : "Stay in Drawing Mode: OFF"}
             onClick={() => setStayInDrawMode(!stayInDrawMode)}
-            className={`w-8 h-8 rounded-lg transition-all cursor-pointer flex items-center justify-center ${stayInDrawMode
-                ? "bg-[#2962FF]/20 text-[#2962FF] border border-[#2962FF]/40"
-                : "text-slate-600 dark:text-[#787b86] hover:bg-slate-200/70 dark:hover:bg-[#2a2e39]"
-              }`}
+            className={`w-8 h-8 rounded-md cursor-pointer flex items-center justify-center transition-colors duration-100 ${
+              stayInDrawMode
+                ? "bg-[#2962FF]/20 text-[#2962FF]"
+                : "text-slate-500 dark:text-[#787b86] hover:bg-slate-200/80 dark:hover:bg-[#2a2e39] hover:text-slate-900 dark:hover:text-white"
+            }`}
           >
             {stayInDrawMode ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
           </button>
 
-          {/* Hide / Show All Drawings Toggle */}
+          {/* Show / Hide Drawings */}
           <button
             type="button"
             title={showDrawings ? "Hide All Drawings" : "Show All Drawings"}
             onClick={() => setShowDrawings(!showDrawings)}
-            className={`w-8 h-8 rounded-lg transition-all cursor-pointer flex items-center justify-center ${!showDrawings
+            className={`w-8 h-8 rounded-md cursor-pointer flex items-center justify-center transition-colors duration-100 ${
+              !showDrawings
                 ? "text-rose-500 bg-rose-500/10"
-                : "text-slate-600 dark:text-[#787b86] hover:bg-slate-200/70 dark:hover:bg-[#2a2e39]"
-              }`}
+                : "text-slate-500 dark:text-[#787b86] hover:bg-slate-200/80 dark:hover:bg-[#2a2e39] hover:text-slate-900 dark:hover:text-white"
+            }`}
           >
             {showDrawings ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
           </button>
 
-          {/* Delete Selected Tool */}
+          {/* Delete Selected */}
           {selectedDrawingId && (
             <button
               type="button"
-              title="Delete Selected (Del / Backspace)"
+              title="Delete Selected Drawing"
               onClick={handleDeleteSelected}
-              className="w-8 h-8 rounded-lg bg-rose-500/15 text-rose-500 hover:bg-rose-500/25 transition-all cursor-pointer flex items-center justify-center"
+              className="w-8 h-8 rounded-md bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 cursor-pointer flex items-center justify-center transition-colors duration-100"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           )}
 
-          {/* Clear All Drawings */}
+          {/* Clear All */}
           <button
             type="button"
             title="Clear All Drawings"
@@ -1494,16 +1564,122 @@ export default function LightweightChartWidget({
               setSelectedDrawingId(null);
               setActiveTool("cursor");
             }}
-            className="w-8 h-8 rounded-lg hover:bg-rose-500/15 hover:text-rose-500 disabled:opacity-20 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center text-slate-600 dark:text-[#787b86]"
+            className="w-8 h-8 rounded-md text-slate-500 dark:text-[#787b86] hover:bg-rose-500/10 hover:text-rose-500 disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center transition-colors duration-100"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
 
+        {/* ── TradingView-Style Professional Vertical Flyout Panel ─────────────── */}
+        {activeCategoryFlyout && (() => {
+          const cat = TOOL_CATEGORIES.find((c) => c.id === activeCategoryFlyout);
+          if (!cat) return null;
+
+          // Group tools by group name or category name
+          const groups: { name: string; tools: ToolDef[] }[] = [];
+          for (const t of cat.tools) {
+            const gName = t.group || cat.name;
+            let existing = groups.find((g) => g.name === gName);
+            if (!existing) {
+              existing = { name: gName, tools: [] };
+              groups.push(existing);
+            }
+            existing.tools.push(t);
+          }
+
+          return (
+            <div
+              ref={flyoutPanelRef}
+              className="absolute left-11 z-[9999] pointer-events-auto animate-in fade-in slide-in-from-left-2 duration-150 select-none"
+              style={{
+                top: `${flyoutTop}px`,
+                maxHeight: "calc(100vh - 160px)",
+              }}
+            >
+              <div className="w-72 rounded-xl border border-slate-200 dark:border-[#2a2e39] bg-white dark:bg-[#1e222d] text-slate-800 dark:text-[#d1d4dc] shadow-2xl overflow-hidden flex flex-col py-1 backdrop-blur-xl">
+                <div
+                  className="overflow-y-auto max-h-[380px] no-scrollbar py-0.5"
+                  style={{ scrollbarWidth: "none" }}
+                >
+                  {groups.map((grp, grpIdx) => (
+                    <div key={grp.name} className="flex flex-col">
+                      {grpIdx > 0 && (
+                        <div className="h-px bg-slate-100 dark:bg-[#2a2e39]/80 mx-2.5 my-1" />
+                      )}
+                      <div className="px-3 pt-2 pb-1">
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-[#787b86] uppercase tracking-wider">
+                          {grp.name}
+                        </p>
+                      </div>
+                      <div className="space-y-0.5 px-1.5">
+                        {grp.tools.map((tool) => {
+                          const TIcon = tool.icon;
+                          const isSelected = activeTool === tool.id;
+                          const isFav = favorites.includes(tool.id);
+
+                          return (
+                            <div
+                              key={tool.id}
+                              onClick={() => {
+                                setActiveTool(tool.id);
+                                setCategoryLastTool((prev) => ({ ...prev, [cat.id]: tool.id }));
+                                setActiveCategoryFlyout(null);
+                              }}
+                              className={`group w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                                isSelected
+                                  ? "bg-slate-100 text-slate-900 font-bold dark:bg-[#2a2e39] dark:text-white"
+                                  : "text-slate-700 dark:text-[#d1d4dc] hover:bg-slate-100 dark:hover:bg-[#2a2e39]/60 hover:text-slate-950 dark:hover:text-white"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <TIcon
+                                  className={`h-4 w-4 shrink-0 ${
+                                    isSelected
+                                      ? "text-[#2962FF]"
+                                      : "text-slate-500 dark:text-[#787b86] group-hover:text-slate-900 dark:group-hover:text-white"
+                                  }`}
+                                />
+                                <span className="truncate text-xs">{tool.name}</span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={(e) => toggleFavorite(tool.id, e)}
+                                className="p-1 rounded text-slate-400 hover:text-amber-400 transition-colors shrink-0"
+                                title={isFav ? "Remove from Favorites" : "Add to Favorites"}
+                              >
+                                <Star
+                                  className={`h-3.5 w-3.5 ${
+                                    isFav
+                                      ? "fill-amber-400 text-amber-400 opacity-100"
+                                      : "opacity-0 group-hover:opacity-40"
+                                  }`}
+                                />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* CHART DISPLAY AREA */}
         <div className="relative flex-1 h-full min-h-0 overflow-hidden bg-white dark:bg-[#131722]">
           {/* Lightweight Charts Canvas */}
           <div className="absolute inset-0" ref={chartContainerRef} />
+
+                    {/* 2. Your Custom Logo Watermark */}
+          <div className="absolute bottom-8 left-4 z-[5] pointer-events-none select-none flex items-center gap-2 opacity-50 hover:opacity-80 transition-opacity">
+            <img src="/logo.jpg" alt="SmartFlowAlgo" className="h-5 w-auto rounded object-contain" />
+            <span className="text-[11px] font-black tracking-wider text-slate-500 dark:text-slate-400 uppercase">
+              SmartFlowAlgo
+            </span>
+          </div>
 
           {/* SVG DRAWING LAYER:
               In cursor mode, pointerEvents: 'none' on SVG allows full scroll, zoom, pan on chart!
