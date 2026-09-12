@@ -556,7 +556,7 @@ export default function LightweightChartWidget({
     const connectWs = () => {
       if (isDisposed) return;
       try {
-        ws = new WebSocket("ws://127.0.0.1:8000/ws");
+        ws = new WebSocket("ws://187.127.156.73:8000/ws");
         wsRef.current = ws;
 
         ws.onopen = () => {
