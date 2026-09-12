@@ -444,7 +444,7 @@ export default function LightweightChartWidget({
           setWsError(null);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // 2. Initialize Lightweight Chart Canvas
@@ -553,58 +553,245 @@ export default function LightweightChartWidget({
     let reconnectTimer: NodeJS.Timeout | null = null;
     let isDisposed = false;
 
+    // const connectWs = () => {
+    //   if (isDisposed) return;
+    //   try {
+    //     ws = new WebSocket("ws://187.127.156.73:8000/ws");
+    //     wsRef.current = ws;
+
+    //     ws.onopen = () => {
+    //       if (isDisposed) return;
+    //       setWsConnected(true);
+    //       setWsError(null);
+    //       ws?.send(JSON.stringify({ type: "get_symbols", client_id: clientId }));
+    //       if (symbol) {
+    //         ws?.send(JSON.stringify({ type: "subscribe", client_id: clientId, symbol, timeframe }));
+    //       }
+    //     };
+
+    //     ws.onmessage = (event) => {
+    //       if (isDisposed) return;
+    //       try {
+    //         const msg = JSON.parse(event.data);
+
+    //         if (msg.type === "broker_status") {
+    //           setBrokerInfo(msg.broker || {});
+    //           if (msg.connected) {
+    //             setWsError(null);
+    //           } else {
+    //             setWsError(msg.error || "Awaiting connection to MT5 RPC bridge...");
+    //           }
+    //         }
+
+    //         if (msg.type === "symbols_list" && Array.isArray(msg.data) && msg.data.length > 0) {
+    //           setSymbolsList(msg.data);
+    //           setSymbol((prev) => {
+    //             if (prev && msg.data.some((s: any) => s.symbol === prev)) return prev;
+    //             if (msg.data.some((s: any) => s.symbol === "EURUSD")) return "EURUSD";
+    //             return msg.data[0]?.symbol || "";
+    //           });
+    //           setWsError(null);
+    //         }
+
+    //         if (msg.type === "snapshot" && Array.isArray(msg.data)) {
+    //           if (!msg.client_id || msg.client_id === clientId) {
+    //             setCandles(msg.data);
+    //             setWsError(null);
+    //             if (candleSeriesRef.current && msg.data.length > 0) {
+    //               const formatted: CandlestickData<Time>[] = msg.data.map((c: any) => ({
+    //                 time: c.time as Time,
+    //                 open: c.open,
+    //                 high: c.high,
+    //                 low: c.low,
+    //                 close: c.close,
+    //               }));
+    //               candleSeriesRef.current.setData(formatted);
+
+    //               if (!hasFittedInitialSnapshot.current) {
+    //                 chartRef.current?.timeScale().fitContent();
+    //                 hasFittedInitialSnapshot.current = true;
+    //               }
+    //             }
+
+    //             if (msg.data.length > 0) {
+    //               const last = msg.data[msg.data.length - 1];
+    //               const first = msg.data[0];
+    //               const chg = last.close - first.open;
+    //               const chgPct = first.open > 0 ? (chg / first.open) * 100 : 0;
+    //               setCurrentTick({
+    //                 price: last.close,
+    //                 time: last.time,
+    //                 change: chg,
+    //                 changePercent: chgPct,
+    //               });
+    //             }
+    //           }
+    //         }
+
+    //         if (msg.type === "candle_update" && msg.candle) {
+    //           if (msg.symbol === symbol && msg.timeframe === timeframe) {
+    //             const updated = msg.candle as CandleData;
+    //             if (candleSeriesRef.current) {
+    //               candleSeriesRef.current.update({
+    //                 time: updated.time as Time,
+    //                 open: updated.open,
+    //                 high: updated.high,
+    //                 low: updated.low,
+    //                 close: updated.close,
+    //               });
+    //             }
+
+    //             setCandles((prev) => {
+    //               if (prev.length === 0) return [updated];
+    //               const last = prev[prev.length - 1];
+    //               if (last.time === updated.time) {
+    //                 const next = [...prev];
+    //                 next[next.length - 1] = updated;
+    //                 return next;
+    //               } else if (updated.time > last.time) {
+    //                 return [...prev.slice(-499), updated];
+    //               }
+    //               return prev;
+    //             });
+
+    //             if (msg.tick) {
+    //               setCurrentTick((prev) => ({
+    //                 price: msg.tick.price || updated.close,
+    //                 time: msg.tick.time || updated.time,
+    //                 change: updated.close - (prev.price || updated.close),
+    //                 changePercent: prev.price > 0 ? ((updated.close - prev.price) / prev.price) * 100 : 0,
+    //               }));
+    //             }
+    //           }
+    //         }
+    //       } catch (e) {
+    //         console.error("WS Parse error:", e);
+    //       }
+    //     };
+
+    //     ws.onerror = () => {
+    //       setWsConnected(false);
+    //       setWsError("Cannot reach MT5 bridge at ws://127.0.0.1:8000/ws");
+    //     };
+
+    //     ws.onclose = () => {
+    //       setWsConnected(false);
+    //       if (!isDisposed) {
+    //         reconnectTimer = setTimeout(connectWs, 2500);
+    //       }
+    //     };
+    //   } catch {
+    //     setWsConnected(false);
+    //     if (!isDisposed) {
+    //       reconnectTimer = setTimeout(connectWs, 2500);
+    //     }
+    //   }
+    // };
+
     const connectWs = () => {
       if (isDisposed) return;
+
       try {
-        ws = new WebSocket("ws://187.127.156.73:8000/ws");
+        // Use WSS when the website is HTTPS, otherwise WS for local development.
+        const protocol =
+          window.location.protocol === "https:" ? "wss:" : "ws:";
+
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+        ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
           if (isDisposed) return;
+
           setWsConnected(true);
           setWsError(null);
-          ws?.send(JSON.stringify({ type: "get_symbols", client_id: clientId }));
+
+          ws?.send(
+            JSON.stringify({
+              type: "get_symbols",
+              client_id: clientId,
+            })
+          );
+
           if (symbol) {
-            ws?.send(JSON.stringify({ type: "subscribe", client_id: clientId, symbol, timeframe }));
+            ws?.send(
+              JSON.stringify({
+                type: "subscribe",
+                client_id: clientId,
+                symbol,
+                timeframe,
+              })
+            );
           }
         };
 
         ws.onmessage = (event) => {
           if (isDisposed) return;
+
           try {
             const msg = JSON.parse(event.data);
 
+            // Broker status
             if (msg.type === "broker_status") {
               setBrokerInfo(msg.broker || {});
+
               if (msg.connected) {
                 setWsError(null);
               } else {
-                setWsError(msg.error || "Awaiting connection to MT5 RPC bridge...");
+                setWsError(
+                  msg.error || "Awaiting connection to MT5 RPC bridge..."
+                );
               }
             }
 
-            if (msg.type === "symbols_list" && Array.isArray(msg.data) && msg.data.length > 0) {
+            // Symbols list
+            if (
+              msg.type === "symbols_list" &&
+              Array.isArray(msg.data) &&
+              msg.data.length > 0
+            ) {
               setSymbolsList(msg.data);
+
               setSymbol((prev) => {
-                if (prev && msg.data.some((s: any) => s.symbol === prev)) return prev;
-                if (msg.data.some((s: any) => s.symbol === "EURUSD")) return "EURUSD";
+                if (
+                  prev &&
+                  msg.data.some((s: any) => s.symbol === prev)
+                ) {
+                  return prev;
+                }
+
+                if (
+                  msg.data.some((s: any) => s.symbol === "EURUSD")
+                ) {
+                  return "EURUSD";
+                }
+
                 return msg.data[0]?.symbol || "";
               });
+
               setWsError(null);
             }
 
+            // Initial candle snapshot
             if (msg.type === "snapshot" && Array.isArray(msg.data)) {
               if (!msg.client_id || msg.client_id === clientId) {
                 setCandles(msg.data);
                 setWsError(null);
-                if (candleSeriesRef.current && msg.data.length > 0) {
-                  const formatted: CandlestickData<Time>[] = msg.data.map((c: any) => ({
-                    time: c.time as Time,
-                    open: c.open,
-                    high: c.high,
-                    low: c.low,
-                    close: c.close,
-                  }));
+
+                if (
+                  candleSeriesRef.current &&
+                  msg.data.length > 0
+                ) {
+                  const formatted: CandlestickData<Time>[] =
+                    msg.data.map((c: any) => ({
+                      time: c.time as Time,
+                      open: c.open,
+                      high: c.high,
+                      low: c.low,
+                      close: c.close,
+                    }));
+
                   candleSeriesRef.current.setData(formatted);
 
                   if (!hasFittedInitialSnapshot.current) {
@@ -616,8 +803,14 @@ export default function LightweightChartWidget({
                 if (msg.data.length > 0) {
                   const last = msg.data[msg.data.length - 1];
                   const first = msg.data[0];
+
                   const chg = last.close - first.open;
-                  const chgPct = first.open > 0 ? (chg / first.open) * 100 : 0;
+
+                  const chgPct =
+                    first.open > 0
+                      ? (chg / first.open) * 100
+                      : 0;
+
                   setCurrentTick({
                     price: last.close,
                     time: last.time,
@@ -628,9 +821,14 @@ export default function LightweightChartWidget({
               }
             }
 
+            // Live candle update
             if (msg.type === "candle_update" && msg.candle) {
-              if (msg.symbol === symbol && msg.timeframe === timeframe) {
+              if (
+                msg.symbol === symbol &&
+                msg.timeframe === timeframe
+              ) {
                 const updated = msg.candle as CandleData;
+
                 if (candleSeriesRef.current) {
                   candleSeriesRef.current.update({
                     time: updated.time as Time,
@@ -642,8 +840,12 @@ export default function LightweightChartWidget({
                 }
 
                 setCandles((prev) => {
-                  if (prev.length === 0) return [updated];
+                  if (prev.length === 0) {
+                    return [updated];
+                  }
+
                   const last = prev[prev.length - 1];
+
                   if (last.time === updated.time) {
                     const next = [...prev];
                     next[next.length - 1] = updated;
@@ -651,6 +853,7 @@ export default function LightweightChartWidget({
                   } else if (updated.time > last.time) {
                     return [...prev.slice(-499), updated];
                   }
+
                   return prev;
                 });
 
@@ -658,8 +861,15 @@ export default function LightweightChartWidget({
                   setCurrentTick((prev) => ({
                     price: msg.tick.price || updated.close,
                     time: msg.tick.time || updated.time,
-                    change: updated.close - (prev.price || updated.close),
-                    changePercent: prev.price > 0 ? ((updated.close - prev.price) / prev.price) * 100 : 0,
+                    change:
+                      updated.close -
+                      (prev.price || updated.close),
+                    changePercent:
+                      prev.price > 0
+                        ? ((updated.close - prev.price) /
+                          prev.price) *
+                        100
+                        : 0,
                   }));
                 }
               }
@@ -669,19 +879,34 @@ export default function LightweightChartWidget({
           }
         };
 
-        ws.onerror = () => {
+        ws.onerror = (error) => {
+          console.error("WebSocket error:", error);
+
           setWsConnected(false);
-          setWsError("Cannot reach MT5 bridge at ws://127.0.0.1:8000/ws");
+
+          setWsError(`Cannot connect to WebSocket at ${wsUrl}`);
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
+          console.warn(
+            "WebSocket closed:",
+            event.code,
+            event.reason
+          );
+
           setWsConnected(false);
+
           if (!isDisposed) {
             reconnectTimer = setTimeout(connectWs, 2500);
           }
         };
-      } catch {
+      } catch (error) {
+        console.error("WebSocket connection error:", error);
+
         setWsConnected(false);
+
+        setWsError(`Cannot connect to WebSocket at ${URL}`);
+
         if (!isDisposed) {
           reconnectTimer = setTimeout(connectWs, 2500);
         }
@@ -739,7 +964,7 @@ export default function LightweightChartWidget({
       if (!currentIndicatorIds.has(key.split("_")[0]) && chartRef.current) {
         try {
           chartRef.current.removeSeries(series);
-        } catch {}
+        } catch { }
         indicatorSeriesRef.current.delete(key);
       }
     });
@@ -785,7 +1010,7 @@ export default function LightweightChartWidget({
         } else {
           markersRef.current = createSeriesMarkers(candleSeriesRef.current, allMarkers);
         }
-      } catch {}
+      } catch { }
     }
   }, [candles, activeBuiltins, activeIndicators, sandboxOpen, sandboxCode]);
 
@@ -1069,11 +1294,10 @@ export default function LightweightChartWidget({
                 key={tf.value}
                 type="button"
                 onClick={() => handleSelectTimeframe(tf.value)}
-                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
-                  timeframe === tf.value
+                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${timeframe === tf.value
                     ? "bg-[#2962FF] text-white shadow-xs"
                     : "text-slate-600 dark:text-[#787b86] hover:text-slate-900 dark:hover:text-white"
-                }`}
+                  }`}
               >
                 {tf.label}
               </button>
@@ -1165,11 +1389,10 @@ export default function LightweightChartWidget({
                   onClick={() => {
                     setActiveCategoryFlyout(isFlyoutOpen ? null : cat.id);
                   }}
-                  className={`w-8 h-8 rounded-lg transition-all cursor-pointer flex items-center justify-center relative group ${
-                    isCategoryActive
+                  className={`w-8 h-8 rounded-lg transition-all cursor-pointer flex items-center justify-center relative group ${isCategoryActive
                       ? "bg-[#2962FF] text-white shadow-md shadow-blue-500/20"
                       : "text-slate-600 dark:text-[#787b86] hover:bg-slate-200/70 dark:hover:bg-[#2a2e39] hover:text-slate-900 dark:hover:text-white"
-                  }`}
+                    }`}
                 >
                   <IconComp className="h-4 w-4" />
                   <span className="absolute bottom-0 right-0 text-[6px] opacity-70">▾</span>
@@ -1194,20 +1417,18 @@ export default function LightweightChartWidget({
                               setActiveTool(tool.id);
                               setActiveCategoryFlyout(null);
                             }}
-                            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs transition-colors cursor-pointer text-left ${
-                              isSelected
+                            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs transition-colors cursor-pointer text-left ${isSelected
                                 ? "bg-[#2962FF] text-white font-bold"
                                 : "text-slate-700 dark:text-[#d1d4dc] hover:bg-slate-100 dark:hover:bg-[#2a2e39]"
-                            }`}
+                              }`}
                           >
                             <TIcon className="h-4 w-4 shrink-0" />
                             <div className="truncate">
                               <p className="font-semibold leading-tight text-[11px]">{tool.name}</p>
                               {tool.description && (
                                 <p
-                                  className={`text-[9px] truncate ${
-                                    isSelected ? "text-blue-100" : "text-slate-400 dark:text-[#787b86]"
-                                  }`}
+                                  className={`text-[9px] truncate ${isSelected ? "text-blue-100" : "text-slate-400 dark:text-[#787b86]"
+                                    }`}
                                 >
                                   {tool.description}
                                 </p>
@@ -1230,11 +1451,10 @@ export default function LightweightChartWidget({
             type="button"
             title={stayInDrawMode ? "Stay in Drawing Mode: ON (Click to toggle)" : "Stay in Drawing Mode: OFF"}
             onClick={() => setStayInDrawMode(!stayInDrawMode)}
-            className={`w-8 h-8 rounded-lg transition-all cursor-pointer flex items-center justify-center ${
-              stayInDrawMode
+            className={`w-8 h-8 rounded-lg transition-all cursor-pointer flex items-center justify-center ${stayInDrawMode
                 ? "bg-[#2962FF]/20 text-[#2962FF] border border-[#2962FF]/40"
                 : "text-slate-600 dark:text-[#787b86] hover:bg-slate-200/70 dark:hover:bg-[#2a2e39]"
-            }`}
+              }`}
           >
             {stayInDrawMode ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
           </button>
@@ -1244,11 +1464,10 @@ export default function LightweightChartWidget({
             type="button"
             title={showDrawings ? "Hide All Drawings" : "Show All Drawings"}
             onClick={() => setShowDrawings(!showDrawings)}
-            className={`w-8 h-8 rounded-lg transition-all cursor-pointer flex items-center justify-center ${
-              !showDrawings
+            className={`w-8 h-8 rounded-lg transition-all cursor-pointer flex items-center justify-center ${!showDrawings
                 ? "text-rose-500 bg-rose-500/10"
                 : "text-slate-600 dark:text-[#787b86] hover:bg-slate-200/70 dark:hover:bg-[#2a2e39]"
-            }`}
+              }`}
           >
             {showDrawings ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
           </button>
@@ -1293,13 +1512,12 @@ export default function LightweightChartWidget({
           {showDrawings && (
             <svg
               ref={drawingSvgRef}
-              className={`absolute inset-0 z-10 w-full h-full ${
-                activeTool === "cursor"
+              className={`absolute inset-0 z-10 w-full h-full ${activeTool === "cursor"
                   ? "pointer-events-none"
                   : activeTool === "eraser"
-                  ? "pointer-events-auto cursor-pointer"
-                  : "pointer-events-auto cursor-crosshair"
-              }`}
+                    ? "pointer-events-auto cursor-pointer"
+                    : "pointer-events-auto cursor-crosshair"
+                }`}
               onMouseDown={handleSvgMouseDown}
               onMouseMove={handleSvgMouseMove}
               onMouseUp={handleSvgMouseUp}
@@ -1495,19 +1713,19 @@ export default function LightweightChartWidget({
                     const fibLevels =
                       d.type === "premium_discount"
                         ? [
-                            { ratio: 0.0, color: "#f23645", label: "Premium (100%)" },
-                            { ratio: 0.5, color: "#ab47bc", label: "50% Equilibrium (EQ)" },
-                            { ratio: 1.0, color: "#089981", label: "Discount (0%)" },
-                          ]
+                          { ratio: 0.0, color: "#f23645", label: "Premium (100%)" },
+                          { ratio: 0.5, color: "#ab47bc", label: "50% Equilibrium (EQ)" },
+                          { ratio: 1.0, color: "#089981", label: "Discount (0%)" },
+                        ]
                         : [
-                            { ratio: 0.0, color: "#787b86", label: "0.0%" },
-                            { ratio: 0.236, color: "#38bdf8", label: "23.6%" },
-                            { ratio: 0.382, color: "#ab47bc", label: "38.2%" },
-                            { ratio: 0.5, color: "#089981", label: "50.0% (EQ)" },
-                            { ratio: 0.618, color: "#ff9800", label: "61.8% (Golden)" },
-                            { ratio: 0.786, color: "#ec4899", label: "78.6%" },
-                            { ratio: 1.0, color: "#f23645", label: "100.0%" },
-                          ];
+                          { ratio: 0.0, color: "#787b86", label: "0.0%" },
+                          { ratio: 0.236, color: "#38bdf8", label: "23.6%" },
+                          { ratio: 0.382, color: "#ab47bc", label: "38.2%" },
+                          { ratio: 0.5, color: "#089981", label: "50.0% (EQ)" },
+                          { ratio: 0.618, color: "#ff9800", label: "61.8% (Golden)" },
+                          { ratio: 0.786, color: "#ec4899", label: "78.6%" },
+                          { ratio: 1.0, color: "#f23645", label: "100.0%" },
+                        ];
 
                     return (
                       <g key={d.id} onClick={handleClick} className="cursor-pointer">
