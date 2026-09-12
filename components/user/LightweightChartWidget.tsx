@@ -592,245 +592,58 @@ export default function LightweightChartWidget({
     let reconnectTimer: NodeJS.Timeout | null = null;
     let isDisposed = false;
 
-    const connectWs = () => {
-      if (isDisposed) return;
-      try {
-        ws = new WebSocket("ws://187.127.156.73:8000/ws");
-        wsRef.current = ws;
-
-        ws.onopen = () => {
-          if (isDisposed) return;
-          setWsConnected(true);
-          setWsError(null);
-          ws?.send(JSON.stringify({ type: "get_symbols", client_id: clientId }));
-          if (symbol) {
-            ws?.send(JSON.stringify({ type: "subscribe", client_id: clientId, symbol, timeframe }));
-          }
-        };
-
-        ws.onmessage = (event) => {
-          if (isDisposed) return;
-          try {
-            const msg = JSON.parse(event.data);
-
-            if (msg.type === "broker_status") {
-              setBrokerInfo(msg.broker || {});
-              if (msg.connected) {
-                setWsError(null);
-              } else {
-                setWsError(msg.error || "Awaiting connection to MT5 RPC bridge...");
-              }
-            }
-
-            if (msg.type === "symbols_list" && Array.isArray(msg.data) && msg.data.length > 0) {
-              setSymbolsList(msg.data);
-              setSymbol((prev) => {
-                if (prev && msg.data.some((s: any) => s.symbol === prev)) return prev;
-                if (msg.data.some((s: any) => s.symbol === "EURUSD")) return "EURUSD";
-                return msg.data[0]?.symbol || "";
-              });
-              setWsError(null);
-            }
-
-            if (msg.type === "snapshot" && Array.isArray(msg.data)) {
-              if (!msg.client_id || msg.client_id === clientId) {
-                setCandles(msg.data);
-                setWsError(null);
-                if (candleSeriesRef.current && msg.data.length > 0) {
-                  const formatted: CandlestickData<Time>[] = msg.data.map((c: any) => ({
-                    time: c.time as Time,
-                    open: c.open,
-                    high: c.high,
-                    low: c.low,
-                    close: c.close,
-                  }));
-                  candleSeriesRef.current.setData(formatted);
-
-                  if (!hasFittedInitialSnapshot.current) {
-                    chartRef.current?.timeScale().fitContent();
-                    hasFittedInitialSnapshot.current = true;
-                  }
-                }
-
-                if (msg.data.length > 0) {
-                  const last = msg.data[msg.data.length - 1];
-                  const first = msg.data[0];
-                  const chg = last.close - first.open;
-                  const chgPct = first.open > 0 ? (chg / first.open) * 100 : 0;
-                  setCurrentTick({
-                    price: last.close,
-                    time: last.time,
-                    change: chg,
-                    changePercent: chgPct,
-                  });
-                }
-              }
-            }
-
-            if (msg.type === "candle_update" && msg.candle) {
-              if (msg.symbol === symbol && msg.timeframe === timeframe) {
-                const updated = msg.candle as CandleData;
-                if (candleSeriesRef.current) {
-                  candleSeriesRef.current.update({
-                    time: updated.time as Time,
-                    open: updated.open,
-                    high: updated.high,
-                    low: updated.low,
-                    close: updated.close,
-                  });
-                }
-
-                setCandles((prev) => {
-                  if (prev.length === 0) return [updated];
-                  const last = prev[prev.length - 1];
-                  if (last.time === updated.time) {
-                    const next = [...prev];
-                    next[next.length - 1] = updated;
-                    return next;
-                  } else if (updated.time > last.time) {
-                    return [...prev.slice(-499), updated];
-                  }
-                  return prev;
-                });
-
-                if (msg.tick) {
-                  setCurrentTick((prev) => ({
-                    price: msg.tick.price || updated.close,
-                    time: msg.tick.time || updated.time,
-                    change: updated.close - (prev.price || updated.close),
-                    changePercent: prev.price > 0 ? ((updated.close - prev.price) / prev.price) * 100 : 0,
-                  }));
-                }
-              }
-            }
-          } catch (e) {
-            console.error("WS Parse error:", e);
-          }
-        };
-
-        ws.onerror = () => {
-          setWsConnected(false);
-          setWsError("Cannot reach MT5 bridge at ws://127.0.0.1:8000/ws");
-        };
-
-        ws.onclose = () => {
-          setWsConnected(false);
-          if (!isDisposed) {
-            reconnectTimer = setTimeout(connectWs, 2500);
-          }
-        };
-      } catch {
-        setWsConnected(false);
-        if (!isDisposed) {
-          reconnectTimer = setTimeout(connectWs, 2500);
-        }
-      }
-    };
-
     // const connectWs = () => {
     //   if (isDisposed) return;
-
     //   try {
-    //     // Use WSS when the website is HTTPS, otherwise WS for local development.
-    //     const protocol =
-    //       window.location.protocol === "https:" ? "wss:" : "ws:";
-
-    //     const wsUrl = `${protocol}//${window.location.host}/ws`;
-
-    //     ws = new WebSocket(wsUrl);
+    //     ws = new WebSocket("ws://187.127.156.73:8000/ws");
     //     wsRef.current = ws;
 
     //     ws.onopen = () => {
     //       if (isDisposed) return;
-
     //       setWsConnected(true);
     //       setWsError(null);
-
-    //       ws?.send(
-    //         JSON.stringify({
-    //           type: "get_symbols",
-    //           client_id: clientId,
-    //         })
-    //       );
-
+    //       ws?.send(JSON.stringify({ type: "get_symbols", client_id: clientId }));
     //       if (symbol) {
-    //         ws?.send(
-    //           JSON.stringify({
-    //             type: "subscribe",
-    //             client_id: clientId,
-    //             symbol,
-    //             timeframe,
-    //           })
-    //         );
+    //         ws?.send(JSON.stringify({ type: "subscribe", client_id: clientId, symbol, timeframe }));
     //       }
     //     };
 
     //     ws.onmessage = (event) => {
     //       if (isDisposed) return;
-
     //       try {
     //         const msg = JSON.parse(event.data);
 
-    //         // Broker status
     //         if (msg.type === "broker_status") {
     //           setBrokerInfo(msg.broker || {});
-
     //           if (msg.connected) {
     //             setWsError(null);
     //           } else {
-    //             setWsError(
-    //               msg.error || "Awaiting connection to MT5 RPC bridge..."
-    //             );
+    //             setWsError(msg.error || "Awaiting connection to MT5 RPC bridge...");
     //           }
     //         }
 
-    //         // Symbols list
-    //         if (
-    //           msg.type === "symbols_list" &&
-    //           Array.isArray(msg.data) &&
-    //           msg.data.length > 0
-    //         ) {
+    //         if (msg.type === "symbols_list" && Array.isArray(msg.data) && msg.data.length > 0) {
     //           setSymbolsList(msg.data);
-
     //           setSymbol((prev) => {
-    //             if (
-    //               prev &&
-    //               msg.data.some((s: any) => s.symbol === prev)
-    //             ) {
-    //               return prev;
-    //             }
-
-    //             if (
-    //               msg.data.some((s: any) => s.symbol === "EURUSD")
-    //             ) {
-    //               return "EURUSD";
-    //             }
-
+    //             if (prev && msg.data.some((s: any) => s.symbol === prev)) return prev;
+    //             if (msg.data.some((s: any) => s.symbol === "EURUSD")) return "EURUSD";
     //             return msg.data[0]?.symbol || "";
     //           });
-
     //           setWsError(null);
     //         }
 
-    //         // Initial candle snapshot
     //         if (msg.type === "snapshot" && Array.isArray(msg.data)) {
     //           if (!msg.client_id || msg.client_id === clientId) {
     //             setCandles(msg.data);
     //             setWsError(null);
-
-    //             if (
-    //               candleSeriesRef.current &&
-    //               msg.data.length > 0
-    //             ) {
-    //               const formatted: CandlestickData<Time>[] =
-    //                 msg.data.map((c: any) => ({
-    //                   time: c.time as Time,
-    //                   open: c.open,
-    //                   high: c.high,
-    //                   low: c.low,
-    //                   close: c.close,
-    //                 }));
-
+    //             if (candleSeriesRef.current && msg.data.length > 0) {
+    //               const formatted: CandlestickData<Time>[] = msg.data.map((c: any) => ({
+    //                 time: c.time as Time,
+    //                 open: c.open,
+    //                 high: c.high,
+    //                 low: c.low,
+    //                 close: c.close,
+    //               }));
     //               candleSeriesRef.current.setData(formatted);
 
     //               if (!hasFittedInitialSnapshot.current) {
@@ -842,14 +655,8 @@ export default function LightweightChartWidget({
     //             if (msg.data.length > 0) {
     //               const last = msg.data[msg.data.length - 1];
     //               const first = msg.data[0];
-
     //               const chg = last.close - first.open;
-
-    //               const chgPct =
-    //                 first.open > 0
-    //                   ? (chg / first.open) * 100
-    //                   : 0;
-
+    //               const chgPct = first.open > 0 ? (chg / first.open) * 100 : 0;
     //               setCurrentTick({
     //                 price: last.close,
     //                 time: last.time,
@@ -860,14 +667,9 @@ export default function LightweightChartWidget({
     //           }
     //         }
 
-    //         // Live candle update
     //         if (msg.type === "candle_update" && msg.candle) {
-    //           if (
-    //             msg.symbol === symbol &&
-    //             msg.timeframe === timeframe
-    //           ) {
+    //           if (msg.symbol === symbol && msg.timeframe === timeframe) {
     //             const updated = msg.candle as CandleData;
-
     //             if (candleSeriesRef.current) {
     //               candleSeriesRef.current.update({
     //                 time: updated.time as Time,
@@ -879,12 +681,8 @@ export default function LightweightChartWidget({
     //             }
 
     //             setCandles((prev) => {
-    //               if (prev.length === 0) {
-    //                 return [updated];
-    //               }
-
+    //               if (prev.length === 0) return [updated];
     //               const last = prev[prev.length - 1];
-
     //               if (last.time === updated.time) {
     //                 const next = [...prev];
     //                 next[next.length - 1] = updated;
@@ -892,7 +690,6 @@ export default function LightweightChartWidget({
     //               } else if (updated.time > last.time) {
     //                 return [...prev.slice(-499), updated];
     //               }
-
     //               return prev;
     //             });
 
@@ -900,15 +697,8 @@ export default function LightweightChartWidget({
     //               setCurrentTick((prev) => ({
     //                 price: msg.tick.price || updated.close,
     //                 time: msg.tick.time || updated.time,
-    //                 change:
-    //                   updated.close -
-    //                   (prev.price || updated.close),
-    //                 changePercent:
-    //                   prev.price > 0
-    //                     ? ((updated.close - prev.price) /
-    //                       prev.price) *
-    //                     100
-    //                     : 0,
+    //                 change: updated.close - (prev.price || updated.close),
+    //                 changePercent: prev.price > 0 ? ((updated.close - prev.price) / prev.price) * 100 : 0,
     //               }));
     //             }
     //           }
@@ -918,39 +708,249 @@ export default function LightweightChartWidget({
     //       }
     //     };
 
-    //     ws.onerror = (error) => {
-    //       console.error("WebSocket error:", error);
-
+    //     ws.onerror = () => {
     //       setWsConnected(false);
-
-    //       setWsError(`Cannot connect to WebSocket at ${wsUrl}`);
+    //       setWsError("Cannot reach MT5 bridge at ws://127.0.0.1:8000/ws");
     //     };
 
-    //     ws.onclose = (event) => {
-    //       console.warn(
-    //         "WebSocket closed:",
-    //         event.code,
-    //         event.reason
-    //       );
-
+    //     ws.onclose = () => {
     //       setWsConnected(false);
-
     //       if (!isDisposed) {
     //         reconnectTimer = setTimeout(connectWs, 2500);
     //       }
     //     };
-    //   } catch (error) {
-    //     console.error("WebSocket connection error:", error);
-
+    //   } catch {
     //     setWsConnected(false);
-
-    //     setWsError(`Cannot connect to WebSocket at ${URL}`);
-
     //     if (!isDisposed) {
     //       reconnectTimer = setTimeout(connectWs, 2500);
     //     }
     //   }
     // };
+
+    const connectWs = () => {
+      if (isDisposed) return;
+
+      try {
+        // Use WSS when the website is HTTPS, otherwise WS for local development.
+        const protocol =
+          window.location.protocol === "https:" ? "wss:" : "ws:";
+
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+        ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          if (isDisposed) return;
+
+          setWsConnected(true);
+          setWsError(null);
+
+          ws?.send(
+            JSON.stringify({
+              type: "get_symbols",
+              client_id: clientId,
+            })
+          );
+
+          if (symbol) {
+            ws?.send(
+              JSON.stringify({
+                type: "subscribe",
+                client_id: clientId,
+                symbol,
+                timeframe,
+              })
+            );
+          }
+        };
+
+        ws.onmessage = (event) => {
+          if (isDisposed) return;
+
+          try {
+            const msg = JSON.parse(event.data);
+
+            // Broker status
+            if (msg.type === "broker_status") {
+              setBrokerInfo(msg.broker || {});
+
+              if (msg.connected) {
+                setWsError(null);
+              } else {
+                setWsError(
+                  msg.error || "Awaiting connection to MT5 RPC bridge..."
+                );
+              }
+            }
+
+            // Symbols list
+            if (
+              msg.type === "symbols_list" &&
+              Array.isArray(msg.data) &&
+              msg.data.length > 0
+            ) {
+              setSymbolsList(msg.data);
+
+              setSymbol((prev) => {
+                if (
+                  prev &&
+                  msg.data.some((s: any) => s.symbol === prev)
+                ) {
+                  return prev;
+                }
+
+                if (
+                  msg.data.some((s: any) => s.symbol === "EURUSD")
+                ) {
+                  return "EURUSD";
+                }
+
+                return msg.data[0]?.symbol || "";
+              });
+
+              setWsError(null);
+            }
+
+            // Initial candle snapshot
+            if (msg.type === "snapshot" && Array.isArray(msg.data)) {
+              if (!msg.client_id || msg.client_id === clientId) {
+                setCandles(msg.data);
+                setWsError(null);
+
+                if (
+                  candleSeriesRef.current &&
+                  msg.data.length > 0
+                ) {
+                  const formatted: CandlestickData<Time>[] =
+                    msg.data.map((c: any) => ({
+                      time: c.time as Time,
+                      open: c.open,
+                      high: c.high,
+                      low: c.low,
+                      close: c.close,
+                    }));
+
+                  candleSeriesRef.current.setData(formatted);
+
+                  if (!hasFittedInitialSnapshot.current) {
+                    chartRef.current?.timeScale().fitContent();
+                    hasFittedInitialSnapshot.current = true;
+                  }
+                }
+
+                if (msg.data.length > 0) {
+                  const last = msg.data[msg.data.length - 1];
+                  const first = msg.data[0];
+
+                  const chg = last.close - first.open;
+
+                  const chgPct =
+                    first.open > 0
+                      ? (chg / first.open) * 100
+                      : 0;
+
+                  setCurrentTick({
+                    price: last.close,
+                    time: last.time,
+                    change: chg,
+                    changePercent: chgPct,
+                  });
+                }
+              }
+            }
+
+            // Live candle update
+            if (msg.type === "candle_update" && msg.candle) {
+              if (
+                msg.symbol === symbol &&
+                msg.timeframe === timeframe
+              ) {
+                const updated = msg.candle as CandleData;
+
+                if (candleSeriesRef.current) {
+                  candleSeriesRef.current.update({
+                    time: updated.time as Time,
+                    open: updated.open,
+                    high: updated.high,
+                    low: updated.low,
+                    close: updated.close,
+                  });
+                }
+
+                setCandles((prev) => {
+                  if (prev.length === 0) {
+                    return [updated];
+                  }
+
+                  const last = prev[prev.length - 1];
+
+                  if (last.time === updated.time) {
+                    const next = [...prev];
+                    next[next.length - 1] = updated;
+                    return next;
+                  } else if (updated.time > last.time) {
+                    return [...prev.slice(-499), updated];
+                  }
+
+                  return prev;
+                });
+
+                if (msg.tick) {
+                  setCurrentTick((prev) => ({
+                    price: msg.tick.price || updated.close,
+                    time: msg.tick.time || updated.time,
+                    change:
+                      updated.close -
+                      (prev.price || updated.close),
+                    changePercent:
+                      prev.price > 0
+                        ? ((updated.close - prev.price) /
+                          prev.price) *
+                        100
+                        : 0,
+                  }));
+                }
+              }
+            }
+          } catch (e) {
+            console.error("WS Parse error:", e);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error("WebSocket error:", error);
+
+          setWsConnected(false);
+
+          setWsError(`Cannot connect to WebSocket at ${wsUrl}`);
+        };
+
+        ws.onclose = (event) => {
+          console.warn(
+            "WebSocket closed:",
+            event.code,
+            event.reason
+          );
+
+          setWsConnected(false);
+
+          if (!isDisposed) {
+            reconnectTimer = setTimeout(connectWs, 2500);
+          }
+        };
+      } catch (error) {
+        console.error("WebSocket connection error:", error);
+
+        setWsConnected(false);
+
+        setWsError(`Cannot connect to WebSocket at ${URL}`);
+
+        if (!isDisposed) {
+          reconnectTimer = setTimeout(connectWs, 2500);
+        }
+      }
+    };
 
     connectWs();
 
