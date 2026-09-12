@@ -16,8 +16,20 @@ function Login() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [loginSubmitted, setLoginSubmitted] = useState(false);
+  const [redirectUrl, setRedirectUrl] = useState("/user");
 
   const router = useRouter();
+
+  const handleGoToDashboard = async () => {
+    let dest = redirectUrl;
+    if (dest === "/user") {
+      const session = await getSession();
+      const userType = (session?.user as any)?.userType;
+      dest = userType === "ADMIN" ? "/admin" : "/user";
+    }
+    router.push(dest);
+    router.refresh();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +52,7 @@ function Login() {
         const session = await getSession();
         const userType = (session?.user as any)?.userType;
         const destination = userType === "ADMIN" ? "/admin" : "/user";
+        setRedirectUrl(destination);
         setTimeout(() => {
           router.push(destination);
           router.refresh();
@@ -158,7 +171,7 @@ function Login() {
               Session initialized successfully. Redirecting you to your trading dashboard...
             </p>
             <button
-              onClick={() => router.push("/user")}
+              onClick={handleGoToDashboard}
               className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow cursor-pointer"
             >
               Go to Dashboard

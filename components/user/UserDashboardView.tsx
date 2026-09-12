@@ -276,7 +276,7 @@ export default function UserDashboardView({ user, indicators }: UserDashboardVie
                           <Eye className="h-4 w-4" />
                         </button>
 
-                        <button
+                        {/* <button
                           type="button"
                           onClick={() =>
                             handleDownloadCode(
@@ -289,7 +289,7 @@ export default function UserDashboardView({ user, indicators }: UserDashboardVie
                           className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-sky-500/40 hover:text-sky-500 transition-colors cursor-pointer"
                         >
                           <Download className="h-4 w-4" />
-                        </button>
+                        </button> */}
                       </>
                     ) : ind.tradingViewUrl ? (
                       <a

@@ -95,25 +95,6 @@ const EMPTY_FORM: FormState = {
   planIds: [],
 };
 
-const SAMPLE_PINE_TEMPLATE = `//@version=5
-indicator("SmartFlow Algo Strategy", overlay=true)
-
-// Inputs
-len = input.int(14, "Length", minval=1)
-src = input.source(close, "Source")
-
-// Calculations
-emaVal = ta.ema(src, len)
-plot(emaVal, color=color.blue, title="EMA Trend")
-
-// Signal logic
-buySignal = ta.crossover(close, emaVal)
-sellSignal = ta.crossunder(close, emaVal)
-
-plotshape(buySignal, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, text="BUY")
-plotshape(sellSignal, title="Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small, text="SELL")
-`;
-
 const inputCls =
   "w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500/30 transition-all";
 
@@ -855,7 +836,7 @@ export default function ScriptIndicatorManagement() {
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-
+{/* 
                         <button
                           type="button"
                           onClick={() =>
@@ -869,7 +850,7 @@ export default function ScriptIndicatorManagement() {
                           className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-sky-500/40 hover:text-sky-500 transition-colors cursor-pointer"
                         >
                           <Download className="h-4 w-4" />
-                        </button>
+                        </button> */}
 
                         <button
                           type="button"
@@ -965,7 +946,8 @@ export default function ScriptIndicatorManagement() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 16, scale: 0.98 }}
               onClick={(e) => e.stopPropagation()}
-              className="my-8 w-full max-w-2xl rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-6 sm:p-8 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto"
+              className="my-8 w-full max-w-2xl rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-6 sm:p-8 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto no-scrollbar"
+              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
             >
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
                 <div>
@@ -1102,25 +1084,15 @@ export default function ScriptIndicatorManagement() {
                       <span>
                         {form.scriptCode ? `${form.scriptCode.split("\n").length} lines • ${form.scriptCode.length} chars` : "No code entered"}
                       </span>
-                      <div className="flex items-center gap-2">
+                      {form.scriptCode && (
                         <button
                           type="button"
-                          onClick={() => setForm((prev) => ({ ...prev, scriptCode: SAMPLE_PINE_TEMPLATE }))}
-                          className="text-sky-500 hover:underline flex items-center gap-1 cursor-pointer"
+                          onClick={() => setForm((prev) => ({ ...prev, scriptCode: "" }))}
+                          className="text-red-400 hover:underline cursor-pointer"
                         >
-                          <Sparkles className="h-3 w-3" />
-                          Insert Sample Template
+                          Clear
                         </button>
-                        {form.scriptCode && (
-                          <button
-                            type="button"
-                            onClick={() => setForm((prev) => ({ ...prev, scriptCode: "" }))}
-                            className="text-red-400 hover:underline cursor-pointer"
-                          >
-                            Clear
-                          </button>
-                        )}
-                      </div>
+                      )}
                     </div>
 
                     <textarea
@@ -1129,7 +1101,12 @@ export default function ScriptIndicatorManagement() {
                       value={form.scriptCode}
                       onChange={(e) => setForm({ ...form, scriptCode: e.target.value })}
                       placeholder={`//@version=5\nindicator("My Indicator", overlay=true)\n\n// Write or paste Pine Script (Pioneer) code here...`}
-                      className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-900 text-sky-300 font-mono text-xs p-3.5 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500/30 transition-all"
+                      className="no-scrollbar w-full min-h-[160px] resize-y overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-mono text-xs p-3.5 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500/30 transition-colors"
+                      style={{
+                        scrollbarWidth: "none",
+                        msOverflowStyle: "none",
+                        resize: "vertical",
+                      }}
                     />
                   </div>
                 </div>
@@ -1278,7 +1255,7 @@ export default function ScriptIndicatorManagement() {
                     )}
                   </button>
 
-                  <button
+                  {/* <button
                     type="button"
                     onClick={() =>
                       handleDownloadCode(
@@ -1291,7 +1268,7 @@ export default function ScriptIndicatorManagement() {
                   >
                     <Download className="h-3.5 w-3.5" />
                     <span>Download</span>
-                  </button>
+                  </button> */}
 
                   <button
                     type="button"
@@ -1303,8 +1280,11 @@ export default function ScriptIndicatorManagement() {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-auto rounded-xl bg-slate-900 p-4 border border-slate-800">
-                <pre className="font-mono text-xs text-sky-300 whitespace-pre leading-relaxed">
+              <div
+                className="flex-1 overflow-auto rounded-xl bg-slate-100 dark:bg-slate-900 p-4 border border-slate-200 dark:border-slate-800 no-scrollbar"
+                style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+              >
+                <pre className="font-mono text-xs text-slate-800 dark:text-slate-200 whitespace-pre leading-relaxed">
                   {viewingScript.code || "// No script code available for this version."}
                 </pre>
               </div>

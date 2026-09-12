@@ -98,9 +98,7 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
   };
 
   // Selected multiple indicators for chart
-  const [selectedIndicatorIds, setSelectedIndicatorIds] = useState<string[]>(() => {
-    return indicators.length > 0 ? [indicators[0].id] : [];
-  });
+  const [selectedIndicatorIds, setSelectedIndicatorIds] = useState<string[]>([]);
   const [appliedToast, setAppliedToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -128,9 +126,9 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
   const isPaid = user.planType === "PAID";
   const daysLeft = user.renualDate
     ? Math.max(
-        0,
-        Math.ceil((new Date(user.renualDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-      )
+      0,
+      Math.ceil((new Date(user.renualDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    )
     : null;
 
   // Toggle single indicator in multi-selection
@@ -184,9 +182,8 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
           COMPACT & COLLAPSIBLE SIDEBAR NAVIGATION (NO OVERLAP)
       ═══════════════════════════════════════════ */}
       <aside
-        className={`h-full shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-950 transition-all duration-300 z-40 ${
-          sidebarCollapsed ? "w-14" : "w-52"
-        } ${mobileMenuOpen ? "fixed inset-y-0 left-0 z-50 w-52 translate-x-0 shadow-2xl flex" : "hidden md:flex"}`}
+        className={`h-full shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-950 transition-all duration-300 z-40 ${sidebarCollapsed ? "w-14" : "w-52"
+          } ${mobileMenuOpen ? "fixed inset-y-0 left-0 z-50 w-52 translate-x-0 shadow-2xl flex" : "hidden md:flex"}`}
       >
         {/* Sidebar Header */}
         <div className="flex h-12 items-center justify-between px-3 border-b border-slate-200 dark:border-slate-800/80">
@@ -232,9 +229,8 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
               setActiveTab("profile");
               setMobileMenuOpen(false);
             }}
-            className={`flex items-center gap-3 p-2.5 rounded-xl bg-slate-100/70 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/50 hover:border-sky-500/50 dark:hover:border-sky-500/50 cursor-pointer transition-all ${
-              sidebarCollapsed ? "justify-center" : ""
-            } ${activeTab === "profile" ? "ring-2 ring-sky-500/40" : ""}`}
+            className={`flex items-center gap-3 p-2.5 rounded-xl bg-slate-100/70 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/50 hover:border-sky-500/50 dark:hover:border-sky-500/50 cursor-pointer transition-all ${sidebarCollapsed ? "justify-center" : ""
+              } ${activeTab === "profile" ? "ring-2 ring-sky-500/40" : ""}`}
             title="View User Profile"
           >
             <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-md">
@@ -247,9 +243,8 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                 </p>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      isPaid ? "bg-emerald-400" : "bg-amber-400"
-                    }`}
+                    className={`h-1.5 w-1.5 rounded-full ${isPaid ? "bg-emerald-400" : "bg-amber-400"
+                      }`}
                   />
                   <span className="text-[10px] font-semibold text-slate-400 uppercase truncate">
                     {user.plan?.name || user.planType || "Free"}
@@ -267,11 +262,10 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
               setActiveTab("dashboard");
               setMobileMenuOpen(false);
             }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === "dashboard"
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === "dashboard"
                 ? "bg-sky-500 text-white shadow-lg shadow-sky-500/20"
                 : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white"
-            } ${sidebarCollapsed ? "justify-center px-2" : ""}`}
+              } ${sidebarCollapsed ? "justify-center px-2" : ""}`}
           >
             <LayoutDashboard className="h-4 w-4 shrink-0" />
             {!sidebarCollapsed && <span>Dashboard</span>}
@@ -282,19 +276,18 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
               setActiveTab("chart");
               setMobileMenuOpen(false);
             }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === "chart"
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === "chart"
                 ? "bg-sky-500 text-white shadow-lg shadow-sky-500/20"
                 : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white"
-            } ${sidebarCollapsed ? "justify-center px-2" : ""}`}
+              } ${sidebarCollapsed ? "justify-center px-2" : ""}`}
           >
             <LineChart className="h-4 w-4 shrink-0" />
             {!sidebarCollapsed && (
               <div className="flex-1 flex items-center justify-between">
                 <span>Live Terminal</span>
-                <span className="px-1.5 py-0.2 rounded-md bg-emerald-400/20 text-emerald-300 text-[9px] font-extrabold uppercase">
+                {/* <span className="px-1.5 py-0.2 rounded-md bg-emerald-400/20 text-emerald-300 text-[9px] font-extrabold uppercase">
                   MT5 Live
-                </span>
+                </span> */}
               </div>
             )}
           </button>
@@ -304,11 +297,10 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
               setActiveTab("profile");
               setMobileMenuOpen(false);
             }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === "profile"
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === "profile"
                 ? "bg-sky-500 text-white shadow-lg shadow-sky-500/20"
                 : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white"
-            } ${sidebarCollapsed ? "justify-center px-2" : ""}`}
+              } ${sidebarCollapsed ? "justify-center px-2" : ""}`}
           >
             <User className="h-4 w-4 shrink-0" />
             {!sidebarCollapsed && <span>My Profile</span>}
@@ -341,9 +333,8 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
         <div className="p-3 border-t border-slate-200 dark:border-slate-800/80 space-y-2">
           <button
             onClick={toggleTheme}
-            className={`w-full flex items-center gap-2.5 p-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors ${
-              sidebarCollapsed ? "justify-center" : ""
-            }`}
+            className={`w-full flex items-center gap-2.5 p-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors ${sidebarCollapsed ? "justify-center" : ""
+              }`}
           >
             {theme === "dark" ? (
               <>
@@ -360,9 +351,8 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
 
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className={`w-full flex items-center gap-2.5 p-2 rounded-xl text-xs font-bold text-rose-500 hover:bg-rose-500/10 transition-colors ${
-              sidebarCollapsed ? "justify-center" : ""
-            }`}
+            className={`w-full flex items-center gap-2.5 p-2 rounded-xl text-xs font-bold text-rose-500 hover:bg-rose-500/10 transition-colors ${sidebarCollapsed ? "justify-center" : ""
+              }`}
           >
             <LogOut className="h-4 w-4" />
             {!sidebarCollapsed && <span>Sign Out</span>}
@@ -408,8 +398,8 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                 {activeTab === "dashboard"
                   ? "Trader Dashboard"
                   : activeTab === "chart"
-                  ? "SmartFlow Live Terminal"
-                  : "User Profile & Account"}
+                    ? "SmartFlow Live Terminal"
+                    : "User Profile & Account"}
               </span>
             </div>
           </div>
@@ -497,14 +487,12 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                       </p>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span
-                          className={`h-2 w-2 rounded-full ${
-                            isPaid ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
-                          }`}
+                          className={`h-2 w-2 rounded-full ${isPaid ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+                            }`}
                         />
                         <span
-                          className={`text-sm font-bold ${
-                            isPaid ? "text-emerald-400" : "text-amber-400"
-                          }`}
+                          className={`text-sm font-bold ${isPaid ? "text-emerald-400" : "text-amber-400"
+                            }`}
                         >
                           {user.planType || "APPLIED"}
                         </span>
@@ -547,21 +535,19 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                       return (
                         <div
                           key={ind.id}
-                          className={`rounded-2xl border transition-all p-5 flex flex-col justify-between ${
-                            isSelected
+                          className={`rounded-2xl border transition-all p-5 flex flex-col justify-between ${isSelected
                               ? "border-sky-500 dark:border-sky-500 bg-sky-500/5 dark:bg-sky-500/10 shadow-lg shadow-sky-500/10"
                               : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 hover:border-sky-500/40"
-                          }`}
+                            }`}
                         >
                           <div className="space-y-3">
                             <div className="flex items-start justify-between gap-3">
                               <div className="flex items-center gap-2.5">
                                 <div
-                                  className={`p-2.5 rounded-xl border ${
-                                    isSelected
+                                  className={`p-2.5 rounded-xl border ${isSelected
                                       ? "bg-sky-500 text-white border-sky-400"
                                       : "bg-sky-500/10 text-sky-500 border-sky-500/20"
-                                  }`}
+                                    }`}
                                 >
                                   <LineChart className="h-5 w-5" />
                                 </div>
@@ -616,11 +602,10 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                             <button
                               type="button"
                               onClick={() => toggleIndicatorSelection(ind.id, ind.name)}
-                              className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
-                                isSelected
+                              className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${isSelected
                                   ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
                                   : "border-slate-200 dark:border-slate-800 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900"
-                              }`}
+                                }`}
                             >
                               <Check className={`h-3.5 w-3.5 ${isSelected ? "opacity-100" : "opacity-30"}`} />
                               <span>{isSelected ? "Selected" : "Select"}</span>
@@ -680,18 +665,16 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                           key={ind.id}
                           type="button"
                           onClick={() => toggleIndicatorSelection(ind.id, ind.name)}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap border ${
-                            isSelected
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap border ${isSelected
                               ? "bg-sky-500 text-white border-sky-400 shadow-sm shadow-sky-500/30"
                               : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700"
-                          }`}
+                            }`}
                         >
                           <div
-                            className={`h-3 w-3 rounded flex items-center justify-center border ${
-                              isSelected
+                            className={`h-3 w-3 rounded flex items-center justify-center border ${isSelected
                                 ? "bg-white text-sky-500 border-white"
                                 : "border-slate-400 dark:border-slate-500"
-                            }`}
+                              }`}
                           >
                             {isSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
                           </div>
@@ -725,7 +708,7 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
               TAB 3: COMPREHENSIVE USER PROFILE SECTION
           ======================================================== */}
           {activeTab === "profile" && (
-            <div className="max-w-5xl mx-auto space-y-6 pb-12">
+            <div className="max-w-[1600px] mx-auto space-y-6 pb-12 px-4 md:px-8">
               {/* Profile Header Banner */}
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-slate-900 via-slate-950 to-indigo-950 p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
                 <div className="absolute right-0 top-0 -mt-10 -mr-10 w-80 h-80 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
@@ -797,7 +780,7 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
               </div>
 
               {/* Profile Details Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {/* 1. Personal & Contact Information */}
                 <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 p-5 shadow-sm space-y-4">
                   <div className="flex items-center gap-2 text-slate-900 dark:text-white font-extrabold text-sm pb-3 border-b border-slate-100 dark:border-slate-800/80">
@@ -976,11 +959,10 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                       </span>
                       <div className="mt-1">
                         <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase ${
-                            isPaid
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase ${isPaid
                               ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                               : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20"
-                          }`}
+                            }`}
                         >
                           <ShieldCheck className="w-3.5 h-3.5" />
                           <span>{user.planType || "APPLIED"}</span>
@@ -1037,11 +1019,11 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                 </div>
 
                 {indicators.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div className="flex flex-wrap gap-3">
                     {indicators.map((ind) => (
                       <div
                         key={ind.id}
-                        className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/50 flex flex-col justify-between space-y-3"
+                        className="w-full sm:w-[calc(50%-0.375rem)] lg:w-[280px] p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/50 flex flex-col justify-between space-y-3"
                       >
                         <div>
                           <div className="flex items-center justify-between gap-2">
@@ -1072,6 +1054,21 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                         </div>
                       </div>
                     ))}
+
+                    {/* Filler CTA so the row doesn't stretch into empty space on desktop */}
+                    <div className="w-full sm:w-[calc(50%-0.375rem)] lg:w-[280px] p-3.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-950/20 flex flex-col items-center justify-center text-center space-y-2">
+                      <Sparkles className="w-4 h-4 text-slate-400" />
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Explore more algorithms to add to your account
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("dashboard")}
+                        className="text-[11px] font-bold text-sky-500 hover:underline cursor-pointer"
+                      >
+                        Browse Indicators &rarr;
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="p-8 text-center text-xs text-slate-400">

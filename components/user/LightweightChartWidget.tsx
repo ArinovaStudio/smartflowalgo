@@ -1083,7 +1083,7 @@ export default function LightweightChartWidget({
           <div className="h-4 w-px bg-slate-200 dark:bg-[#2a2e39] mx-0.5 hidden sm:block" />
 
           {/* Pine Script Sandbox Button */}
-          <button
+          {/* <button
             type="button"
             onClick={() => setSandboxOpen(!sandboxOpen)}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all cursor-pointer ${
@@ -1094,7 +1094,7 @@ export default function LightweightChartWidget({
           >
             <Code2 className="h-3.5 w-3.5 text-purple-400" />
             <span className="hidden sm:inline">Pine Script</span>
-          </button>
+          </button> */}
         </div>
 
         {/* Live Broker Status Tag */}
@@ -1107,7 +1107,7 @@ export default function LightweightChartWidget({
           ) : (
             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px] font-medium">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-              <span>Awaiting MT5</span>
+              <span>Awaiting Server</span>
             </div>
           )}
         </div>
