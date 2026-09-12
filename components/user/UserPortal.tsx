@@ -121,6 +121,7 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
     } else {
       document.documentElement.classList.remove("dark");
     }
+    window.location.reload();
   };
 
   const isPaid = user.planType === "PAID";
