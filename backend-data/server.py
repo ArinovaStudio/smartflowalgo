@@ -90,6 +90,10 @@ TIMEFRAME_MAP = {
     "1mn": 49153,   # TIMEFRAME_MN1
 }
 
+# Indicators such as pivots and higher-timeframe zones need enough completed
+# bars to establish their state before the currently visible chart window.
+SNAPSHOT_CANDLE_COUNT = 1000
+
 def get_tf_int(tf_str: str) -> int:
     return TIMEFRAME_MAP.get(tf_str.lower().strip(), 1)
 
@@ -257,7 +261,7 @@ async def ensure_mt5_connected() -> bool:
     async with rpc_lock:
         return await asyncio.to_thread(connect_rpyc_sync)
 
-def fetch_snapshot_sync(sym: str, tf_str: str, count: int = 300) -> List[Dict[str, Any]]:
+def fetch_snapshot_sync(sym: str, tf_str: str, count: int = SNAPSHOT_CANDLE_COUNT) -> List[Dict[str, Any]]:
     """Synchronously fetches historical candles from MT5 via RPyC."""
     if rpyc_conn is None:
         return []
@@ -435,7 +439,7 @@ async def get_symbols():
 async def get_candles(
     symbol: str = Query("EURUSD", description="Currency pair symbol"),
     timeframe: str = Query("1m", description="Timeframe e.g. 1m, 5m, 1h"),
-    count: int = Query(300, ge=1, le=1000, description="Candle count"),
+    count: int = Query(SNAPSHOT_CANDLE_COUNT, ge=1, le=SNAPSHOT_CANDLE_COUNT, description="Candle count"),
 ):
     if not broker_info.get("connected"):
         return {
@@ -527,7 +531,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                         # Immediately fetch genuine historical snapshot from MT5
                         async with rpc_lock:
-                            candles = await asyncio.to_thread(fetch_snapshot_sync, sym, tf, 300)
+                            candles = await asyncio.to_thread(fetch_snapshot_sync, sym, tf, SNAPSHOT_CANDLE_COUNT)
 
                         await websocket.send_json({
                             "type": "snapshot",

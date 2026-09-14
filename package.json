@@ -18,6 +18,7 @@
     "@auth/prisma-adapter": "^2.11.3",
     "@google/genai": "^2.4.0",
     "@hookform/resolvers": "^5.2.1",
+    "@opus-aether-ai/pine-transpiler": "^0.4.11",
     "@prisma-next/postgres": "^0.14.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
