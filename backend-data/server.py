@@ -92,7 +92,7 @@ TIMEFRAME_MAP = {
 
 # Indicators such as pivots and higher-timeframe zones need enough completed
 # bars to establish their state before the currently visible chart window.
-SNAPSHOT_CANDLE_COUNT = 1000
+SNAPSHOT_CANDLE_COUNT = 10000
 
 def get_tf_int(tf_str: str) -> int:
     return TIMEFRAME_MAP.get(tf_str.lower().strip(), 1)

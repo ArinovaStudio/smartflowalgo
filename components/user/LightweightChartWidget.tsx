@@ -58,12 +58,19 @@ export default function LightweightChartWidget({
   const [symbolSearch, setSymbolSearch] = useState("");
 
   const { symbolsList, setSymbolsList } = useInitialSymbols(setSymbol);
+  const activeSymbolInfo: SymbolInfo = useMemo(() => {
+    if (!symbol) return { symbol: "", name: "Awaiting broker stream...", category: "Forex", digits: 5 };
+    return symbolsList.find((s) => s.symbol === symbol) || { symbol, name: symbol, category: "Forex", digits: 5 };
+  }, [symbol, symbolsList]);
 
   // ── Chart instance + market data streaming ───────────────────────────────
   const clientId = useClientId();
-  const { containerRef, chartRef, candleSeriesRef, hasFittedInitialSnapshot, hoveredCandle } = useLightweightChart({ isDark });
+  const { containerRef, chartRef, candleSeriesRef, hasFittedInitialSnapshot, hoveredCandle } = useLightweightChart({
+    isDark,
+    pricePrecision: activeSymbolInfo.digits,
+  });
 
-  const { wsConnected, wsError, candles, currentTick } = useMarketSocket({
+  const { wsConnected, wsError, candles, currentTick, snapshotSubscription } = useMarketSocket({
     clientId,
     symbol,
     timeframe,
@@ -83,6 +90,7 @@ export default function LightweightChartWidget({
     candles,
     symbol,
     timeframe,
+    marketDataReady: snapshotSubscription?.symbol === symbol && snapshotSubscription.timeframe === timeframe,
     activeBuiltins,
     activeIndicators,
     sandboxOpen,
@@ -144,11 +152,6 @@ export default function LightweightChartWidget({
   useEffect(() => {
     if (drawingTools.activeTool === "cursor") setActiveCategoryFlyout(null);
   }, [drawingTools.activeTool]);
-
-  const activeSymbolInfo: SymbolInfo = useMemo(() => {
-    if (!symbol) return { symbol: "", name: "Awaiting broker stream...", category: "Forex", digits: 5 };
-    return symbolsList.find((s) => s.symbol === symbol) || { symbol, name: symbol, category: "Forex", digits: 5 };
-  }, [symbol, symbolsList]);
 
   return (
     <div

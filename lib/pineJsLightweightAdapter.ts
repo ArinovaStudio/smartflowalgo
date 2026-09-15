@@ -383,8 +383,58 @@ function cross(a: Series | null, b: Series | null, up: boolean) {
   return [nowA, nowB, prevA, prevB].every(finite) && (up ? nowA > nowB && prevA <= prevB : nowA < nowB && prevA >= prevB);
 }
 
+/**
+ * Pine emits every setter call during historical replay. The chart only needs
+ * the final state of each live drawing/table cell, not thousands of obsolete
+ * intermediate positions. Keeping this bounded avoids memory pressure and
+ * prevents a spread call from overflowing the JavaScript call stack.
+ */
+type VisualObjectState = { create?: PineVisualEvent; updates: Map<string, PineVisualEvent> };
+
+function recordVisualEvent(objects: Map<string, VisualObjectState>, event: PineVisualEvent) {
+  const [namespace, action] = event.call.split(".");
+  if (!namespace || namespace === "Std") return;
+  const objectKey = `${namespace}:${event.pineHandleId ?? "new"}`;
+  if (action === "new") {
+    objects.set(objectKey, { create: event, updates: new Map() });
+    return;
+  }
+  if (action === "delete") {
+    objects.delete(objectKey);
+    return;
+  }
+  const state = objects.get(objectKey);
+  if (!state) return;
+    // table.cell uses its own row/column identity; all other setter calls have
+    // one final value per operation for the drawing handle.
+  const cellOffset = typeof event.args[0] === "number" ? 0 : 1;
+  const updateKey = event.call === "table.cell"
+    ? `${event.call}:${event.args[cellOffset]}:${event.args[cellOffset + 1]}`
+    : event.call;
+  state.updates.set(updateKey, event);
+}
+
+function visualEventsFromState(objects: Map<string, VisualObjectState>) {
+  const result: PineVisualEvent[] = [];
+  for (const state of objects.values()) {
+    if (state.create) result.push(state.create);
+    for (const update of state.updates.values()) result.push(update);
+  }
+  return result;
+}
+
+function yieldToBrowser() {
+  return new Promise<void>((resolve) => {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => resolve());
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+}
+
 /** Runs compiler output without relying on TradingView's Charting Library. */
-export function runPineScriptOnCandles(script: string, indicatorId: string, indicatorName: string, candles: CandleData[], symbol = "CUSTOM", timeframe = "1m"): PineRunResult {
+export async function runPineScriptOnCandles(script: string, indicatorId: string, indicatorName: string, candles: CandleData[], symbol = "CUSTOM", timeframe = "1m"): Promise<PineRunResult> {
   const compiled = getFactory(script, indicatorId, indicatorName, symbol);
   if (!compiled.success || !compiled.indicatorFactory) return { name: indicatorName, overlay: true, plots: [], visualEvents: [], error: compiled.error || "Pine compilation failed" };
   try {
@@ -398,17 +448,25 @@ export function runPineScriptOnCandles(script: string, indicatorId: string, indi
       const style = indicator.metainfo.defaults.styles[plot.id] || {};
       return { id: plot.id || `plot_${index}`, title: plot.id || indicatorName, color: style.color || "#2962FF", lineWidth: style.linewidth || 2, overlay: indicator.metainfo.is_price_study !== false, data: [] };
     });
-    const visualEvents: PineVisualEvent[] = [];
-    candles.forEach((candle, index) => {
+    const visualObjectState = new Map<string, VisualObjectState>();
+    let workSliceStarted = performance.now();
+    for (let index = 0; index < candles.length; index += 1) {
+      const candle = candles[index];
       context.beginBar(candle, index, candles.length);
       const values: number[] = instance.main(context, (inputIndex: number) => inputValues[inputIndex]);
       values.forEach((value, plotIndex) => {
         if (plots[plotIndex] && finite(value)) plots[plotIndex].data.push({ time: candle.time, value });
       });
       const events = (values as any).__visualEvents;
-      if (Array.isArray(events)) visualEvents.push(...events);
-    });
-    return { name: indicator.name || indicatorName, overlay: indicator.metainfo.is_price_study !== false, plots, visualEvents };
+      if (Array.isArray(events)) for (const event of events) recordVisualEvent(visualObjectState, event);
+      // Yield after a short CPU slice. 5,000 candles still get full Pine
+      // history, but drawing and navigation remain responsive while replaying.
+      if (index % 16 === 15 && performance.now() - workSliceStarted >= 8) {
+        await yieldToBrowser();
+        workSliceStarted = performance.now();
+      }
+    }
+    return { name: indicator.name || indicatorName, overlay: indicator.metainfo.is_price_study !== false, plots, visualEvents: visualEventsFromState(visualObjectState) };
   } catch (error) {
     return { name: indicatorName, overlay: true, plots: [], visualEvents: [], error: error instanceof Error ? error.message : String(error) };
   }

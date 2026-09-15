@@ -87,7 +87,7 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
   const [activeTab, setActiveTab] = useState<"dashboard" | "chart" | "profile">("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("dark");
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const handleCopy = (text: string, fieldName: string) => {
@@ -97,13 +97,14 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  // Selected multiple indicators for chart
+  // The chart intentionally runs one proprietary indicator at a time. This
+  // prevents conflicting drawings and keeps Pine replay responsive.
   const [selectedIndicatorIds, setSelectedIndicatorIds] = useState<string[]>([]);
   const [appliedToast, setAppliedToast] = useState<string | null>(null);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null;
-    const initialTheme = savedTheme || (document.documentElement.classList.contains("dark") ? "dark" : "dark");
+    const initialTheme = savedTheme || "light";
     setTheme(initialTheme);
     if (initialTheme === "dark") {
       document.documentElement.classList.add("dark");
@@ -132,11 +133,11 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
     )
     : null;
 
-  // Toggle single indicator in multi-selection
+  // Selecting a new indicator replaces the currently active one.
   const toggleIndicatorSelection = (id: string, name?: string) => {
     setSelectedIndicatorIds((prev) => {
-      const exists = prev.includes(id);
-      const next = exists ? prev.filter((item) => item !== id) : [...prev, id];
+      const exists = prev[0] === id;
+      const next = exists ? [] : [id];
       if (!exists && name) {
         setAppliedToast(`Added "${name}" to Live Chart!`);
         setTimeout(() => setAppliedToast(null), 2500);
@@ -147,12 +148,7 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
 
   // Add & Launch directly from dashboard card
   const handleApplyAndLaunch = (ind: UserIndicator) => {
-    setSelectedIndicatorIds((prev) => {
-      if (!prev.includes(ind.id)) {
-        return [...prev, ind.id];
-      }
-      return prev;
-    });
+    setSelectedIndicatorIds([ind.id]);
     setAppliedToast(`Loaded "${ind.name}" on Live Chart!`);
     setTimeout(() => setAppliedToast(null), 2500);
     setActiveTab("chart");
@@ -312,7 +308,7 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
             <div className="pt-4 px-1 space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Active Indicators ({activeIndicatorsList.length})
+                  Active Indicator
                 </p>
               </div>
               <div className="space-y-1">
@@ -523,7 +519,7 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                       <span>My Unlocked Indicators ({indicators.length})</span>
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      Proprietary indicators granted with your subscription. Click &quot;Add & Launch Chart&quot; to load them into the TradingView terminal.
+                      Proprietary indicators granted with your subscription. Choose one indicator to load into the live terminal.
                     </p>
                   </div>
                 </div>
@@ -609,7 +605,7 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                                 }`}
                             >
                               <Check className={`h-3.5 w-3.5 ${isSelected ? "opacity-100" : "opacity-30"}`} />
-                              <span>{isSelected ? "Selected" : "Select"}</span>
+                              <span>{isSelected ? "Active" : "Select"}</span>
                             </button>
 
                             <button
@@ -649,45 +645,32 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
           ======================================================== */}
           {activeTab === "chart" && (
             <div className="flex flex-col h-full w-full min-h-0 space-y-1.5 overflow-hidden">
-              {/* ── Top Indicator Selection Bar (Multiple Indicators Toggle) ── */}
+              {/* ── Top Indicator Selection Bar (Single Indicator Dropdown) ── */}
               {indicators.length > 0 && (
                 <div className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/90 shadow-sm shrink-0">
-                  <div className="flex items-center gap-2 overflow-x-auto py-0.5 scrollbar-none">
+                  <label className="flex min-w-0 items-center gap-2 py-0.5">
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
                       <Sparkles className="h-3.5 w-3.5 text-sky-500" />
                       <span>Custom Indicators:</span>
                     </span>
-
-                    {/* Indicator Multi-Select Toggle Badges */}
-                    {indicators.map((ind) => {
-                      const isSelected = selectedIndicatorIds.includes(ind.id);
-                      return (
-                        <button
-                          key={ind.id}
-                          type="button"
-                          onClick={() => toggleIndicatorSelection(ind.id, ind.name)}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap border ${isSelected
-                              ? "bg-sky-500 text-white border-sky-400 shadow-sm shadow-sky-500/30"
-                              : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700"
-                            }`}
-                        >
-                          <div
-                            className={`h-3 w-3 rounded flex items-center justify-center border ${isSelected
-                                ? "bg-white text-sky-500 border-white"
-                                : "border-slate-400 dark:border-slate-500"
-                              }`}
-                          >
-                            {isSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
-                          </div>
-                          <span>{ind.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                    <select
+                      aria-label="Select custom indicator"
+                      value={selectedIndicatorIds[0] || ""}
+                      onChange={(event) => {
+                        const indicator = indicators.find((item) => item.id === event.target.value);
+                        if (indicator) toggleIndicatorSelection(indicator.id, indicator.name);
+                        else setSelectedIndicatorIds([]);
+                      }}
+                      className="min-w-0 max-w-[280px] rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 outline-none transition-colors focus:border-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    >
+                      <option value="">No indicator selected</option>
+                      {indicators.map((ind) => <option key={ind.id} value={ind.id}>{ind.name}</option>)}
+                    </select>
+                  </label>
 
                   <div className="hidden sm:flex items-center gap-2 shrink-0">
                     <span className="text-[11px] font-semibold text-emerald-400">
-                      {selectedIndicatorIds.length} Active on Chart
+                      {selectedIndicatorIds.length === 1 ? "1 Active on Chart" : "No Active Indicator"}
                     </span>
                   </div>
                 </div>

@@ -58,6 +58,8 @@ export function useInitialSymbols(setSymbol: React.Dispatch<React.SetStateAction
 
 interface UseLightweightChartArgs {
   isDark: boolean;
+  /** MT5's authoritative number of decimal places for the selected symbol. */
+  pricePrecision?: number;
 }
 
 /**
@@ -66,7 +68,7 @@ interface UseLightweightChartArgs {
  * chart whenever the theme flips (colors can't be swapped on the fly for
  * every option, so a clean recreate keeps things simple and correct).
  */
-export function useLightweightChart({ isDark }: UseLightweightChartArgs) {
+export function useLightweightChart({ isDark, pricePrecision = 5 }: UseLightweightChartArgs) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<any> | null>(null);
@@ -124,12 +126,16 @@ export function useLightweightChart({ isDark }: UseLightweightChartArgs) {
       },
     });
 
+    const precision = Math.max(0, Math.min(10, Math.floor(pricePrecision)));
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#089981",
       downColor: "#f23645",
       borderVisible: false,
       wickUpColor: "#089981",
       wickDownColor: "#f23645",
+      // Lightweight Charts defaults to two decimal places. That makes FX
+      // quotes such as 1.34778 appear as 1.35 on the right price scale.
+      priceFormat: { type: "price", precision, minMove: 10 ** -precision },
     });
 
     chartRef.current = chart;
@@ -170,6 +176,16 @@ export function useLightweightChart({ isDark }: UseLightweightChartArgs) {
     };
   }, [isDark]);
 
+  // Symbols can arrive after the chart itself (the MT5 symbols list is sent
+  // over WebSocket). Update only the formatter; do not recreate or refit the
+  // chart, because that would interrupt a user's current view.
+  useEffect(() => {
+    const precision = Math.max(0, Math.min(10, Math.floor(pricePrecision)));
+    candleSeriesRef.current?.applyOptions({
+      priceFormat: { type: "price", precision, minMove: 10 ** -precision },
+    });
+  }, [pricePrecision]);
+
   return { containerRef, chartRef, candleSeriesRef, hasFittedInitialSnapshot, hoveredCandle };
 }
 
@@ -205,6 +221,7 @@ export function useMarketSocket({
   const [wsError, setWsError] = useState<string | null>("Connecting to MT5 Python Bridge...");
   const [brokerInfo, setBrokerInfo] = useState<Record<string, unknown>>({});
   const [candles, setCandles] = useState<CandleData[]>([]);
+  const [snapshotSubscription, setSnapshotSubscription] = useState<{ symbol: string; timeframe: string } | null>(null);
   const [currentTick, setCurrentTick] = useState<TickState>({
     price: 0,
     time: Math.floor(Date.now() / 1000),
@@ -217,10 +234,22 @@ export function useMarketSocket({
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let isDisposed = false;
 
+    // Each symbol/timeframe has its own socket subscription. Remove all old
+    // candle state before opening it so overlays can never be paired with a
+    // stale or empty previous chart.
+    setCandles([]);
+    setSnapshotSubscription(null);
+    hasFittedInitialSnapshot.current = false;
+    candleSeriesRef.current?.setData([]);
+
     const applySnapshot = (msg: any) => {
       if (msg.client_id && msg.client_id !== clientId) return;
+      // A prior subscription can finish after the user selects a new pair.
+      // Never let its candles become the data source for the active chart.
+      if (msg.symbol !== symbol || msg.timeframe !== timeframe) return;
 
       setCandles(msg.data);
+      setSnapshotSubscription({ symbol, timeframe });
       setWsError(null);
 
       if (candleSeriesRef.current && msg.data.length > 0) {
@@ -274,7 +303,7 @@ export function useMarketSocket({
         if (updated.time > last.time) {
           // Keep the same history depth as the server snapshot. Pine pivots,
           // ATR and request.security all depend on bars before the viewport.
-          return [...prev.slice(-999), updated];
+          return [...prev.slice(-9999), updated];
         }
         return prev;
       });
@@ -334,7 +363,7 @@ export function useMarketSocket({
       let wsUrl = "";
       try {
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        wsUrl = `${protocol}//${window.location.host}/ws`;
+        wsUrl = `${protocol}//${window.location.hostname}/ws`;
 
         ws = new WebSocket(wsUrl);
         wsRef.current = ws;
@@ -383,15 +412,5 @@ export function useMarketSocket({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId, symbol, timeframe]);
 
-  // Re-subscribe whenever the symbol or timeframe changes (after the socket is already open).
-  useEffect(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && symbol) {
-      setCandles([]);
-      hasFittedInitialSnapshot.current = false;
-      wsRef.current.send(JSON.stringify({ type: "subscribe", client_id: clientId, symbol, timeframe }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol, timeframe, clientId]);
-
-  return { wsConnected, wsError, brokerInfo, candles, currentTick };
+  return { wsConnected, wsError, brokerInfo, candles, currentTick, snapshotSubscription };
 }
