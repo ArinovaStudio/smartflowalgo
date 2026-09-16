@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { IChartApi, ISeriesApi, Time } from "lightweight-charts";
 import type { CandleData } from "./types";
 import type { PineVisualEvent } from "@/lib/pineJsLightweightAdapter";
+import { ChevronDown, Minus } from "lucide-react";
 
 type Handle = { id: string; kind: "line" | "box" | "label"; args: unknown[]; text?: string; textColor?: string; stack?: number };
 type TableCell = { text?: string; textColor?: string; bgcolor?: string };
@@ -126,6 +127,15 @@ function PineTableCard({ table }: { table: Table }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const hasSavedLayoutRef = useRef(false);
   const hasPlacedInitialLayoutRef = useRef(false);
+  const [isMinimized, setIsMinimized] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(storageKey) || "null") as (Partial<TableLayout> & { isMinimized?: boolean }) | null;
+      return Boolean(saved?.isMinimized);
+    } catch {
+      return false;
+    }
+  });
   const [layout, setLayout] = useState<TableLayout>(() => {
     if (typeof window === "undefined") return { x: 12, y: 12, width: min.width, height: min.height };
     try {
@@ -139,13 +149,14 @@ function PineTableCard({ table }: { table: Table }) {
   });
   const dragRef = useRef<{ mode: "move" | "resize"; x: number; y: number; layout: TableLayout } | null>(null);
 
-  const clampToChart = (candidate: TableLayout) => {
+  const clampToChart = (candidate: TableLayout, currentHeight?: number) => {
     const parent = cardRef.current?.parentElement?.getBoundingClientRect();
     if (!parent) return candidate;
+    const effectiveHeight = currentHeight ?? (isMinimized ? 16 : candidate.height);
     return {
       ...candidate,
       x: Math.max(0, Math.min(candidate.x, Math.max(0, parent.width - candidate.width))),
-      y: Math.max(0, Math.min(candidate.y, Math.max(0, parent.height - candidate.height))),
+      y: Math.max(0, Math.min(candidate.y, Math.max(0, parent.height - effectiveHeight))),
     };
   };
 
@@ -165,9 +176,20 @@ function PineTableCard({ table }: { table: Table }) {
       y: position.includes("top") ? 12 : position.includes("bottom") ? Math.max(12, parent.height - normalized.height - 12) : Math.max(12, (parent.height - normalized.height) / 2),
     });
   }), [min.height, min.width, table.position]);
+
   useEffect(() => {
-    try { window.localStorage.setItem(storageKey, JSON.stringify(layout)); } catch { /* Storage is optional. */ }
-  }, [layout, storageKey]);
+    try { window.localStorage.setItem(storageKey, JSON.stringify({ ...layout, isMinimized })); } catch { /* Storage is optional. */ }
+  }, [layout, isMinimized, storageKey]);
+
+  const toggleMinimize = () => {
+    setIsMinimized((prev) => {
+      const next = !prev;
+      if (!next) {
+        setLayout((current) => clampToChart(current, current.height));
+      }
+      return next;
+    });
+  };
 
   const begin = (event: React.PointerEvent<HTMLDivElement>, mode: "move" | "resize") => {
     event.preventDefault();
@@ -190,23 +212,65 @@ function PineTableCard({ table }: { table: Table }) {
     }
   };
 
+  const cardTitle = useMemo(() => {
+    const c0 = table.cells.get("0:0")?.text?.trim();
+    const c1 = table.cells.get("1:0")?.text?.trim();
+    if (c0 && c1) return `${c0} • ${c1}`;
+    if (c0) return c0;
+    return "DASHBOARD";
+  }, [table]);
+
   const fontSize = Math.max(9, Math.min(14, 10 * Math.min(layout.width / min.width, layout.height / min.height)));
   return <div
     ref={cardRef}
-    className="absolute z-[7] select-none rounded border border-cyan-400/50 bg-[#070a10]/95 shadow-xl"
-    style={{ left: layout.x, top: layout.y, width: layout.width, minWidth: min.width, minHeight: min.height }}
+    className="absolute z-[7] select-none rounded border border-cyan-400/50 bg-[#070a10]/95 shadow-xl overflow-hidden"
+    style={{ left: layout.x, top: layout.y, width: layout.width, minWidth: isMinimized ? undefined : min.width, minHeight: isMinimized ? undefined : min.height }}
     onPointerMove={move}
     onPointerUp={() => { dragRef.current = null; }}
     onPointerCancel={() => { dragRef.current = null; }}
   >
-    <div className="flex h-4 cursor-move items-center justify-center border-b border-cyan-400/30 text-[8px] tracking-[0.2em] text-cyan-300/70" onPointerDown={(event) => begin(event, "move")}>DRAG</div>
-    <div style={{ display: "grid", minHeight: layout.height - 16, gridTemplateColumns: min.columns.map((column) => `minmax(${column}px, 1fr)`).join(" "), gridAutoRows: "minmax(23px, 1fr)", fontSize }}>
-      {Array.from({ length: table.columns * table.rows }, (_, index) => {
-        const cell = table.cells.get(`${index % table.columns}:${Math.floor(index / table.columns)}`);
-        return <div key={index} className="min-w-0 border border-slate-700/50 px-2 py-1 whitespace-nowrap" style={{ color: cell?.textColor || "#d1d4dc", background: cell?.bgcolor, lineHeight: 1.25 }}>{cell?.text || ""}</div>;
-      })}
+    <div
+      className={`flex h-4 cursor-move items-center justify-between px-1 text-[8px] tracking-[0.2em] text-cyan-300/70 ${isMinimized ? "" : "border-b border-cyan-400/30"}`}
+      onPointerDown={(event) => begin(event, "move")}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        toggleMinimize();
+      }}
+      title={isMinimized ? "Drag to move • Double-click to expand" : "Drag to move • Double-click to minimize"}
+    >
+      {isMinimized ? (
+        <span className="truncate max-w-[140px] text-[8px] font-bold tracking-normal text-cyan-200 pl-0.5">
+          {cardTitle}
+        </span>
+      ) : (
+        <div className="w-3.5" />
+      )}
+      <span className={isMinimized ? "text-[7px] opacity-60" : ""}>DRAG</span>
+      <button
+        type="button"
+        aria-label={isMinimized ? "Expand dashboard" : "Minimize dashboard"}
+        title={isMinimized ? "Expand (or double-click header)" : "Minimize (or double-click header)"}
+        className="flex h-3.5 w-3.5 items-center justify-center rounded text-cyan-300/70 hover:bg-cyan-400/20 hover:text-cyan-100 transition-colors"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          toggleMinimize();
+        }}
+      >
+        {isMinimized ? <ChevronDown className="h-2.5 w-2.5" /> : <Minus className="h-2.5 w-2.5" />}
+      </button>
     </div>
-    <div aria-label="Resize dashboard" title="Drag to resize" className="absolute bottom-0 right-0 h-4 w-4 cursor-se-resize border-l border-t border-cyan-400/60 bg-cyan-400/20" onPointerDown={(event) => begin(event, "resize")} />
+    {!isMinimized && (
+      <>
+        <div style={{ display: "grid", minHeight: layout.height - 16, gridTemplateColumns: min.columns.map((column) => `minmax(${column}px, 1fr)`).join(" "), gridAutoRows: "minmax(23px, 1fr)", fontSize }}>
+          {Array.from({ length: table.columns * table.rows }, (_, index) => {
+            const cell = table.cells.get(`${index % table.columns}:${Math.floor(index / table.columns)}`);
+            return <div key={index} className="min-w-0 border border-slate-700/50 px-2 py-1 whitespace-nowrap" style={{ color: cell?.textColor || "#d1d4dc", background: cell?.bgcolor, lineHeight: 1.25 }}>{cell?.text || ""}</div>;
+          })}
+        </div>
+        <div aria-label="Resize dashboard" title="Drag to resize" className="absolute bottom-0 right-0 h-4 w-4 cursor-se-resize border-l border-t border-cyan-400/60 bg-cyan-400/20" onPointerDown={(event) => begin(event, "resize")} />
+      </>
+    )}
   </div>;
 }
 

@@ -42,7 +42,7 @@ export default function LightweightChartWidget({
 
   useEffect(() => {
     if (typeof document === "undefined") return;
-    const syncTheme = () => setCurrentTheme(document.documentElement.classList.contains("dark") ? "dark" : "light");
+    const syncTheme = () => setCurrentTheme("light");
     syncTheme();
     const observer = new MutationObserver(syncTheme);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });

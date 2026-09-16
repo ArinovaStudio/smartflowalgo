@@ -21,7 +21,7 @@ export default function TradingViewWidget({
       <LightweightChartWidget
         initialSymbol={symbol.replace("FX:", "")}
         initialTimeframe={interval === "1" ? "1m" : interval}
-        theme={theme}
+        theme="light"
         activeIndicators={activeIndicators}
       />
     </div>
