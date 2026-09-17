@@ -120,7 +120,7 @@ const Terminal = () => {
             : "1m";
 
     return (
-        <div className="w-full min-h-0 flex flex-col space-y-4">
+        <div className="w-full min-h-[80%] flex flex-col space-y-4">
             {/* ═══════════════════════════════════════════
                 VIEW 1: UNLOCKED INDICATORS GRID (DEFAULT VIEW)
             ═══════════════════════════════════════════ */}
@@ -261,7 +261,7 @@ const Terminal = () => {
                 VIEW 2: LIVE CHART PLATFORM (AFTER LAUNCH)
             ═══════════════════════════════════════════ */}
             {activeView === "chart" && (
-                <div className="flex flex-col space-y-2">
+                <div className="flex flex-col space-y-1">
                     {/* Top Control Bar with Back Button & Indicator Info */}
                     <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-slate-800/80 bg-slate-900/90 shadow-sm">
                         <div className="flex items-center gap-3">

@@ -7,7 +7,9 @@ export interface PinePlot {
   color: string;
   lineWidth: number;
   overlay: boolean;
-  data: Array<{ time: number; value: number }>;
+  times?: Float64Array;
+  values?: Float64Array;
+  data?: Array<{ time: number; value: number }>;
 }
 
 export interface PineVisualEvent {
@@ -42,17 +44,47 @@ function getFactory(script: string, indicatorId: string, indicatorName: string, 
     "set_bgcolor", "set_border_color", "set_border_width", "set_text_color",
   ]);
   const compatibleScript = script
+    // Table setters rewrite to table.cell with named parameters so the transpiler emits valid events
+    .replace(/\btable\.set_cell_text\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "table.cell($1, $2, $3, text = $4)")
+    .replace(/\btable\.set_cell_bgcolor\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "table.cell($1, $2, $3, bgcolor = $4)")
+    .replace(/\btable\.set_cell_text_color\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "table.cell($1, $2, $3, text_color = $4)")
+    .replace(/\btable\.set_cell_value\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "table.cell($1, $2, $3, text = str.tostring($4))")
+    .replace(/\btable\.set_cell_text_size\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "table.cell($1, $2, $3, text_size = $4)")
+    .replace(/\btable\.set_cell_text_halign\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "table.cell($1, $2, $3, text_halign = $4)")
+    .replace(/\btable\.set_cell_text_valign\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "table.cell($1, $2, $3, text_valign = $4)")
+    .replace(/\btable\.set_cell_tooltip\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "table.cell($1, $2, $3, tooltip = $4)")
+    .replace(/\btable\.set_cell_width\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "table.cell($1, $2, $3, width = $4)")
+    .replace(/\btable\.set_cell_height\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "table.cell($1, $2, $3, height = $4)")
+    .replace(/\btable\.delete\s*\(\s*([^)]+)\)/g, "table.clear($1)")
+    // Method-call syntax on table handles (e.g. t.set_cell_text(col, row, text))
+    .replace(/([A-Za-z_$][\w$]*)\.set_cell_text\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "$1.cell($2, $3, text = $4)")
+    .replace(/([A-Za-z_$][\w$]*)\.set_cell_bgcolor\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "$1.cell($2, $3, bgcolor = $4)")
+    .replace(/([A-Za-z_$][\w$]*)\.set_cell_text_color\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "$1.cell($2, $3, text_color = $4)")
+    .replace(/([A-Za-z_$][\w$]*)\.set_cell_value\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "$1.cell($2, $3, text = str.tostring($4))")
+    .replace(/([A-Za-z_$][\w$]*)\.set_cell_text_size\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/g, "$1.cell($2, $3, text_size = $4)")
+    // Table position setters (function and method syntax)
+    .replace(/\btable\.set_position\s*\(\s*([^,]+)\s*,\s*([^)]+)\)/g, 'table.cell($1, 0, 0, tooltip = "__PINE_TABLE_POS__" + str.tostring($2))')
+    .replace(/([A-Za-z_$][\w$]*)\.set_position\s*\(\s*([^)]+)\)/g, '$1.cell(0, 0, tooltip = "__PINE_TABLE_POS__" + str.tostring($2))')
+    // Table bgcolor setters
+    .replace(/\btable\.set_bgcolor\s*\(\s*([^,]+)\s*,\s*([^)]+)\)/g, "table.cell($1, 0, 0, bgcolor = $2)")
+    .replace(/([A-Za-z_$][\w$]*)\.set_bgcolor\s*\(\s*([^)]+)\)/g, "$1.cell(0, 0, bgcolor = $2)")
+    // Method-call syntax for delete
+    .replace(/([A-Za-z_$][\w$]*)\.delete\s*\(\s*\)/g, "$1.clear()")
+    // General fallback for remaining unsupported table setters so they do not crash instance.main
+    .replace(/\btable\.set_([a-zA-Z0-9_]+)\s*\(\s*([^,]+)\s*(?:,[^)]*)?\)/g, 'table.cell($2, 0, 0, tooltip = "__PINE_TABLE_IGNORE__")')
+    .replace(/([A-Za-z_$][\w$]*)\.set_(columns|rows|frame_color|frame_width|border_color|border_width)\s*\(\s*([^)]*)\)/g, '$1.cell(0, 0, tooltip = "__PINE_TABLE_IGNORE__")')
     // v0.4.11 has no box.set_text stub. Route a box caption through the
     // supported text-color event with a private marker; PineVisualLayer reads
     // the marker as text and leaves the next real text-color call intact.
     .replace(/^([ \t]*)box\.set_text\(\s*([A-Za-z_$][\w$]*)\s*,\s*(.+)\)\s*;?\s*$/gm, '$1box.set_text_color($2, "__PINE_BOX_TEXT__" + ($3))')
     .replace(
-    /^\s*box\.(set_[A-Za-z0-9_]+)\s*\([^\n]*\)\s*;?\s*$/gm,
-    (statement, method: string) => supportedBoxSetters.has(method) ? statement : "",
-  // The installed compiler maps `timenow` incorrectly in its factory path,
-  // leaving it as an unbound identifier. `time` below is supplied in Pine's
-  // native milliseconds, so it is the deterministic per-candle fallback.
-  ).replace(/\btimenow\b/g, "time")
+      /^\s*box\.(set_[A-Za-z0-9_]+)\s*\([^\n]*\)\s*;?\s*$/gm,
+      (statement, method: string) => supportedBoxSetters.has(method) ? statement : "",
+    )
+    // The installed compiler maps `timenow` incorrectly in its factory path,
+    // leaving it as an unbound identifier. `time` below is supplied in Pine's
+    // native milliseconds, so it is the deterministic per-candle fallback.
+    .replace(/\btimenow\b/g, "time")
     // The factory path in v0.4.11 does not bind Pine's `font` namespace.
     // Lightweight Charts uses the browser font stack, so retain execution by
     // substituting an equivalent CSS-family string for font constants.
@@ -70,13 +102,13 @@ function getFactory(script: string, indicatorId: string, indicatorName: string, 
     : { success: false, error: syntax.reason || "Invalid Pine Script" };
   if (factoryCache.size >= MAX_CACHED_FACTORIES) factoryCache.delete(factoryCache.keys().next().value!);
   factoryCache.set(cacheKey, compiled as ReturnType<typeof transpileToPineJS>);
-  console.log(compiled);
-  
   return compiled as ReturnType<typeof transpileToPineJS>;
 }
 
 /** A Pine series stores the present value plus its completed-bar history. */
 class Series {
+  private static nextId = 1;
+  public readonly id = Series.nextId++;
   private values: number[] = [];
 
   get length() {
@@ -99,6 +131,63 @@ class Series {
     const count = Math.max(0, Math.trunc(length));
     return this.values.slice(Math.max(0, this.values.length - count));
   }
+
+  sma(length: number): number {
+    const len = Math.trunc(length);
+    if (len <= 0 || this.values.length < len) return Number.NaN;
+    let sum = 0;
+    const end = this.values.length;
+    const start = end - len;
+    for (let i = start; i < end; i++) {
+      const v = this.values[i];
+      if (!Number.isFinite(v)) return Number.NaN;
+      sum += v;
+    }
+    return sum / len;
+  }
+
+  wma(length: number): number {
+    const len = Math.trunc(length);
+    if (len <= 0 || this.values.length < len) return Number.NaN;
+    const divisor = len * (len + 1) / 2;
+    let sum = 0;
+    const end = this.values.length;
+    const start = end - len;
+    for (let i = start, w = 1; i < end; i++, w++) {
+      const v = this.values[i];
+      if (!Number.isFinite(v)) return Number.NaN;
+      sum += v * w;
+    }
+    return sum / divisor;
+  }
+
+  highest(length: number): number {
+    const len = Math.trunc(length);
+    if (len <= 0 || this.values.length < len) return Number.NaN;
+    let max = Number.NEGATIVE_INFINITY;
+    const end = this.values.length;
+    const start = end - len;
+    for (let i = start; i < end; i++) {
+      const v = this.values[i];
+      if (!Number.isFinite(v)) return Number.NaN;
+      if (v > max) max = v;
+    }
+    return max === Number.NEGATIVE_INFINITY ? Number.NaN : max;
+  }
+
+  lowest(length: number): number {
+    const len = Math.trunc(length);
+    if (len <= 0 || this.values.length < len) return Number.NaN;
+    let min = Number.POSITIVE_INFINITY;
+    const end = this.values.length;
+    const start = end - len;
+    for (let i = start; i < end; i++) {
+      const v = this.values[i];
+      if (!Number.isFinite(v)) return Number.NaN;
+      if (v < min) min = v;
+    }
+    return min === Number.POSITIVE_INFINITY ? Number.NaN : min;
+  }
 }
 
 type RuntimeContext = {
@@ -110,6 +199,9 @@ type RuntimeContext = {
   beginBar: (candle: CandleData, index: number, total: number) => void;
   new_var: (value: unknown) => Series;
   __atrState?: Map<number, { index: number; value: number; firstTr: number[] }>;
+  __dmiState?: Map<string, any>;
+  __emaState?: Map<string, { count: number; sum: number; value: number; lastBarIndex: number }>;
+  __rmaState?: Map<string, { count: number; sum: number; value: number; lastBarIndex: number }>;
   __valueWhenCallSlot?: number;
   __valueWhenState?: Map<number, Array<{ condition: boolean; value: unknown }>>;
 };
@@ -204,33 +296,61 @@ function makePineJsRuntime() {
       return Math.round(value * factor) / factor;
     },
     sma: (input: unknown, length: number) => {
-      const values = source(input)?.valuesFromNewest(length) ?? [];
-      return values.length === length && values.every(finite) ? average(values) : Number.NaN;
+      const series = source(input);
+      return series ? series.sma(length) : Number.NaN;
     },
     wma: (input: unknown, length: number) => {
-      const values = source(input)?.valuesFromNewest(length) ?? [];
-      if (values.length !== length || !values.every(finite)) return Number.NaN;
-      const divisor = length * (length + 1) / 2;
-      return values.reduce((sum, value, index) => sum + value * (index + 1), 0) / divisor;
+      const series = source(input);
+      return series ? series.wma(length) : Number.NaN;
     },
     ema: (input: unknown, length: number, ctx: RuntimeContext) => {
       const series = source(input);
-      if (!series || !Number.isFinite(length) || length <= 0) return Number.NaN;
-      const values = series.valuesFromNewest(ctx.barIndex + 1);
-      if (values.length < length || !values.slice(0, length).every(finite)) return Number.NaN;
-      const alpha = 2 / (length + 1);
-      let result = average(values.slice(0, length));
-      for (let i = length; i < values.length; i += 1) result = alpha * values[i] + (1 - alpha) * result;
-      return result;
+      const len = Math.trunc(length);
+      if (!series || !Number.isFinite(len) || len <= 0) return Number.NaN;
+      const states = ctx.__emaState ?? (ctx.__emaState = new Map());
+      const key = `${series.id}:${len}`;
+      let state = states.get(key);
+      if (!state) {
+        state = { count: 0, sum: 0, value: Number.NaN, lastBarIndex: -1 };
+        states.set(key, state);
+      }
+      if (state.lastBarIndex === ctx.barIndex) return state.value;
+      const curr = series.get(0);
+      if (!finite(curr)) return state.value;
+      if (state.count < len) {
+        state.sum += curr;
+        state.count += 1;
+        state.value = state.count === len ? state.sum / len : Number.NaN;
+      } else {
+        const alpha = 2 / (len + 1);
+        state.value = alpha * curr + (1 - alpha) * state.value;
+      }
+      state.lastBarIndex = ctx.barIndex;
+      return state.value;
     },
     rma: (input: unknown, length: number, ctx: RuntimeContext) => {
       const series = source(input);
-      if (!series || length <= 0) return Number.NaN;
-      const values = series.valuesFromNewest(ctx.barIndex + 1);
-      if (values.length < length || !values.slice(0, length).every(finite)) return Number.NaN;
-      let result = average(values.slice(0, length));
-      for (let i = length; i < values.length; i += 1) result = (result * (length - 1) + values[i]) / length;
-      return result;
+      const len = Math.trunc(length);
+      if (!series || !Number.isFinite(len) || len <= 0) return Number.NaN;
+      const states = ctx.__rmaState ?? (ctx.__rmaState = new Map());
+      const key = `${series.id}:${len}`;
+      let state = states.get(key);
+      if (!state) {
+        state = { count: 0, sum: 0, value: Number.NaN, lastBarIndex: -1 };
+        states.set(key, state);
+      }
+      if (state.lastBarIndex === ctx.barIndex) return state.value;
+      const curr = series.get(0);
+      if (!finite(curr)) return state.value;
+      if (state.count < len) {
+        state.sum += curr;
+        state.count += 1;
+        state.value = state.count === len ? state.sum / len : Number.NaN;
+      } else {
+        state.value = (state.value * (len - 1) + curr) / len;
+      }
+      state.lastBarIndex = ctx.barIndex;
+      return state.value;
     },
     atr: (length: number, ctx: RuntimeContext) => {
       const history = (ctx as any).__candles as CandleData[] | undefined;
@@ -312,12 +432,12 @@ function makePineJsRuntime() {
     },
     adx: (diLength: number, adxSmoothing: number, ctx: RuntimeContext) => std.dmi(diLength, adxSmoothing, ctx)[3],
     highest: (input: unknown, length: number) => {
-      const values = source(input)?.valuesFromNewest(length) ?? [];
-      return values.length === length ? Math.max(...values) : Number.NaN;
+      const series = source(input);
+      return series ? series.highest(length) : Number.NaN;
     },
     lowest: (input: unknown, length: number) => {
-      const values = source(input)?.valuesFromNewest(length) ?? [];
-      return values.length === length ? Math.min(...values) : Number.NaN;
+      const series = source(input);
+      return series ? series.lowest(length) : Number.NaN;
     },
     valuewhen: (condition: unknown, value: unknown, occurrence = 0, context?: RuntimeContext) => {
       const conditions = source(condition);
@@ -371,10 +491,18 @@ function makePineJsRuntime() {
 
 function pivot(series: Series | null, left: number, right: number, high: boolean) {
   if (!series) return Number.NaN;
-  const values = series.valuesFromNewest(left + right + 1);
-  if (values.length !== left + right + 1 || !values.every(finite)) return Number.NaN;
-  const candidate = values[values.length - 1 - right];
-  return values.every((value, index) => index === values.length - 1 - right || (high ? candidate > value : candidate < value)) ? candidate : Number.NaN;
+  const total = Math.trunc(left) + Math.trunc(right) + 1;
+  if (total <= 0 || series.length < total) return Number.NaN;
+  const r = Math.trunc(right);
+  const candidate = series.get(r);
+  if (!finite(candidate)) return Number.NaN;
+  for (let offset = 0; offset < total; offset += 1) {
+    if (offset === r) continue;
+    const v = series.get(offset);
+    if (!finite(v)) return Number.NaN;
+    if (high ? v >= candidate : v <= candidate) return Number.NaN;
+  }
+  return candidate;
 }
 
 function cross(a: Series | null, b: Series | null, up: boolean) {
@@ -396,22 +524,59 @@ function recordVisualEvent(objects: Map<string, VisualObjectState>, event: PineV
   if (!namespace || namespace === "Std") return;
   const objectKey = `${namespace}:${event.pineHandleId ?? "new"}`;
   if (action === "new") {
-    objects.set(objectKey, { create: event, updates: new Map() });
+    const existing = objects.get(objectKey);
+    if (existing) {
+      existing.create = event;
+    } else {
+      objects.set(objectKey, { create: event, updates: new Map() });
+    }
     return;
   }
   if (action === "delete") {
     objects.delete(objectKey);
     return;
   }
-  const state = objects.get(objectKey);
-  if (!state) return;
-    // table.cell uses its own row/column identity; all other setter calls have
-    // one final value per operation for the drawing handle.
-  const cellOffset = typeof event.args[0] === "number" ? 0 : 1;
-  const updateKey = event.call === "table.cell"
-    ? `${event.call}:${event.args[cellOffset]}:${event.args[cellOffset + 1]}`
-    : event.call;
-  state.updates.set(updateKey, event);
+  let state = objects.get(objectKey);
+  if (!state) {
+    state = { updates: new Map() };
+    objects.set(objectKey, state);
+  }
+
+  if (namespace === "table") {
+    // If event is table.cell, merge attributes so earlier text/colors aren't lost
+    const cellOffset = typeof event.args[0] === "number" || typeof event.args[0] === "object" ? 1 : 0;
+    const tooltip = event.args[cellOffset + 10];
+    if (typeof tooltip === "string") {
+      if (tooltip.startsWith("__PINE_TABLE_POS__")) {
+        state.updates.set("__pos__", event);
+        return;
+      }
+      if (tooltip.startsWith("__PINE_TABLE_IGNORE__")) {
+        return;
+      }
+    }
+    const col = event.args[cellOffset];
+    const row = event.args[cellOffset + 1];
+    const cellKey = `cell:${col}:${row}`;
+    const prev = state.updates.get(cellKey);
+    if (prev) {
+      const mergedArgs = [...prev.args];
+      for (let i = 0; i < event.args.length; i++) {
+        if (event.args[i] !== null && event.args[i] !== undefined) {
+          mergedArgs[i] = event.args[i];
+        }
+      }
+      prev.args = mergedArgs;
+      if (event.style) {
+        prev.style = { ...(prev.style || {}), ...event.style };
+      }
+    } else {
+      state.updates.set(cellKey, { ...event, args: [...event.args] });
+    }
+    return;
+  }
+
+  state.updates.set(event.call, event);
 }
 
 function visualEventsFromState(objects: Map<string, VisualObjectState>) {
@@ -433,41 +598,114 @@ function yieldToBrowser() {
   });
 }
 
-/** Runs compiler output without relying on TradingView's Charting Library. */
-export async function runPineScriptOnCandles(script: string, indicatorId: string, indicatorName: string, candles: CandleData[], symbol = "CUSTOM", timeframe = "1m"): Promise<PineRunResult> {
+/**
+ * Runs Pine Script compiler and indicator execution with pre-allocated Float64Array
+ * memory buffers and cooperative CPU time-slicing to maintain 60 FPS UI responsiveness.
+ */
+export async function runPineScriptOnCandles(
+  script: string,
+  indicatorId: string,
+  indicatorName: string,
+  candles: CandleData[],
+  symbol = "CUSTOM",
+  timeframe = "1m"
+): Promise<PineRunResult> {
   const compiled = getFactory(script, indicatorId, indicatorName, symbol);
-  if (!compiled.success || !compiled.indicatorFactory) return { name: indicatorName, overlay: true, plots: [], visualEvents: [], error: compiled.error || "Pine compilation failed" };
+  if (!compiled.success || !compiled.indicatorFactory) {
+    return {
+      name: indicatorName,
+      overlay: true,
+      plots: [],
+      visualEvents: [],
+      error: compiled.error || "Pine compilation failed",
+    };
+  }
+
   try {
     const indicator = compiled.indicatorFactory(makePineJsRuntime() as any);
     const instance = new (indicator.constructor as any)();
     const context = makeContext(symbol, timeframe);
-    (context as any).__candles = candles;
+
+    // Limit historical replay to the newest 2,000 candles to eliminate lag while ensuring technical indicator convergence
+    const maxBars = 2000;
+    const effectiveCandles = candles.length > maxBars ? candles.slice(-maxBars) : candles;
+    (context as any).__candles = effectiveCandles;
     const inputValues = indicator.metainfo.inputs.map((input: any) => input.defval);
     instance.init?.(context, (index: number) => inputValues[index]);
-    const plots: PinePlot[] = indicator.metainfo.plots.map((plot: any, index: number): PinePlot => {
-      const style = indicator.metainfo.defaults.styles[plot.id] || {};
-      return { id: plot.id || `plot_${index}`, title: plot.id || indicatorName, color: style.color || "#2962FF", lineWidth: style.linewidth || 2, overlay: indicator.metainfo.is_price_study !== false, data: [] };
-    });
+
+    const numCandles = effectiveCandles.length;
+    const rawPlots = indicator.metainfo.plots || [];
+    const numPlots = rawPlots.length;
+
+    // Pre-allocate typed arrays for high-performance zero-overhead series evaluation
+    const timesBuffers: Float64Array[] = [];
+    const valuesBuffers: Float64Array[] = [];
+    const plotData: Array<Array<{ time: number; value: number }>> = [];
+
+    for (let p = 0; p < numPlots; p++) {
+      timesBuffers.push(new Float64Array(numCandles));
+      valuesBuffers.push(new Float64Array(numCandles));
+      plotData.push([]);
+    }
+
     const visualObjectState = new Map<string, VisualObjectState>();
     let workSliceStarted = performance.now();
-    for (let index = 0; index < candles.length; index += 1) {
-      const candle = candles[index];
-      context.beginBar(candle, index, candles.length);
+
+    for (let index = 0; index < numCandles; index += 1) {
+      const candle = effectiveCandles[index];
+      context.beginBar(candle, index, numCandles);
       const values: number[] = instance.main(context, (inputIndex: number) => inputValues[inputIndex]);
-      values.forEach((value, plotIndex) => {
-        if (plots[plotIndex] && finite(value)) plots[plotIndex].data.push({ time: candle.time, value });
-      });
+      const candleTime = candle.time;
+
+      for (let p = 0; p < numPlots; p++) {
+        timesBuffers[p][index] = candleTime;
+        const val = values[p];
+        const isFin = finite(val);
+        valuesBuffers[p][index] = isFin ? (val as number) : Number.NaN;
+        if (isFin) {
+          plotData[p].push({ time: candleTime, value: val as number });
+        }
+      }
+
       const events = (values as any).__visualEvents;
-      if (Array.isArray(events)) for (const event of events) recordVisualEvent(visualObjectState, event);
-      // Yield after a short CPU slice. 5,000 candles still get full Pine
-      // history, but drawing and navigation remain responsive while replaying.
-      if (index % 16 === 15 && performance.now() - workSliceStarted >= 8) {
+      if (Array.isArray(events)) {
+        for (const event of events) recordVisualEvent(visualObjectState, event);
+      }
+
+      // Yield after a short CPU slice (6ms) so chart pan/zoom remain locked at 60 FPS
+      if ((index & 15) === 15 && performance.now() - workSliceStarted >= 6) {
         await yieldToBrowser();
         workSliceStarted = performance.now();
       }
     }
-    return { name: indicator.name || indicatorName, overlay: indicator.metainfo.is_price_study !== false, plots, visualEvents: visualEventsFromState(visualObjectState) };
+
+    const plots: PinePlot[] = rawPlots.map((plot: any, index: number): PinePlot => {
+      const style = indicator.metainfo.defaults?.styles?.[plot.id] || {};
+      return {
+        id: plot.id || `plot_${index}`,
+        title: plot.id || indicatorName,
+        color: style.color || "#2962FF",
+        lineWidth: style.linewidth || 2,
+        overlay: indicator.metainfo.is_price_study !== false,
+        times: timesBuffers[index],
+        values: valuesBuffers[index],
+        data: plotData[index],
+      };
+    });
+
+    return {
+      name: indicator.name || indicatorName,
+      overlay: indicator.metainfo.is_price_study !== false,
+      plots,
+      visualEvents: visualEventsFromState(visualObjectState),
+    };
   } catch (error) {
-    return { name: indicatorName, overlay: true, plots: [], visualEvents: [], error: error instanceof Error ? error.message : String(error) };
+    return {
+      name: indicatorName,
+      overlay: true,
+      plots: [],
+      visualEvents: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }

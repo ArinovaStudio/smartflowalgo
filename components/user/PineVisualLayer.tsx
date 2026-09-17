@@ -59,24 +59,114 @@ export function reduceEvents(events: PineVisualEvent[]) {
     }
     else if (event.call === "label.set_xy") { const handle = handles.get(id); if (handle) { handle.args[0] = args[1]; handle.args[1] = args[2]; } }
     else if (event.call === "label.set_text") { const handle = handles.get(id); if (handle) handle.args[2] = args[1]; }
-    else if (event.call === "table.new") tables.set(id, { id, position: String(args[0] || "middle_right"), columns: Math.max(1, number(args[1]) || 1), rows: Math.max(1, number(args[2]) || 1), cells: new Map() });
+    else if (event.call === "table.new") {
+      const cols = Math.max(1, number(args[1]) || 1);
+      const rows = Math.max(1, number(args[2]) || 1);
+      const existing = tables.get(id);
+      if (existing) {
+        existing.position = String(args[0] || existing.position || "middle_right");
+        existing.columns = Math.max(existing.columns, cols);
+        existing.rows = Math.max(existing.rows, rows);
+      } else {
+        tables.set(id, {
+          id,
+          position: String(args[0] || "middle_right"),
+          columns: cols,
+          rows,
+          cells: new Map(),
+        });
+      }
+    }
     else if (event.call === "table.cell") {
-      // The transpiler preserves the Pine signature here: table_id, column,
-      // row, text, width, height, text_color, …, bgcolor. The table id is
-      // already represented by pineHandleId, so it must not be mistaken for
-      // the column number.
-      const table = tables.get(id);
-      if (table) {
-        // The standalone and factory paths differ: one includes table_id as
-        // args[0], the other has already associated it with pineHandleId.
-        const offset = typeof args[0] === "number" ? 0 : 1;
+      let table = tables.get(id);
+      if (!table) {
+        table = { id, position: "middle_right", columns: 1, rows: 1, cells: new Map() };
+        tables.set(id, table);
+      }
+      const offset = typeof args[0] === "number" || typeof args[0] === "object" ? 1 : 0;
+      const tooltip = typeof args[offset + 10] === "string" ? (args[offset + 10] as string) : "";
+      if (tooltip.startsWith("__PINE_TABLE_POS__")) {
+        const rawPos = tooltip.slice("__PINE_TABLE_POS__".length).trim();
+        const cleanPos = rawPos.replace(/^position\./, "").toLowerCase();
+        if (cleanPos) table.position = cleanPos;
+        continue;
+      }
+      if (tooltip.startsWith("__PINE_TABLE_IGNORE__")) {
+        continue;
+      }
+      const col = number(args[offset]);
+      const row = number(args[offset + 1]);
+      if (Number.isFinite(col) && Number.isFinite(row)) {
+        table.columns = Math.max(table.columns, col + 1);
+        table.rows = Math.max(table.rows, row + 1);
+        const cellKey = `${col}:${row}`;
+        const prev = table.cells.get(cellKey) || {};
+        const rawText = args[offset + 2];
         const textColor = args[offset + 5];
         const background = args[offset + 9];
-        table.cells.set(`${args[offset]}:${args[offset + 1]}`, {
-          text: formatDisplayText(args[offset + 2]),
-          textColor: typeof textColor === "string" ? textColor : undefined,
-          bgcolor: typeof background === "string" ? background : undefined,
+        table.cells.set(cellKey, {
+          text: rawText !== null && rawText !== undefined ? formatDisplayText(rawText) : prev.text,
+          textColor: typeof textColor === "string" ? textColor : prev.textColor,
+          bgcolor: typeof background === "string" ? background : prev.bgcolor,
         });
+      }
+    }
+    else if (event.call === "table.set_cell_text" || event.call === "table.set_cell_value") {
+      let table = tables.get(id);
+      if (!table) {
+        table = { id, position: "middle_right", columns: 1, rows: 1, cells: new Map() };
+        tables.set(id, table);
+      }
+      const offset = typeof args[0] === "number" || typeof args[0] === "object" ? 1 : 0;
+      const col = number(args[offset]);
+      const row = number(args[offset + 1]);
+      if (Number.isFinite(col) && Number.isFinite(row)) {
+        table.columns = Math.max(table.columns, col + 1);
+        table.rows = Math.max(table.rows, row + 1);
+        const cellKey = `${col}:${row}`;
+        const prev = table.cells.get(cellKey) || {};
+        table.cells.set(cellKey, {
+          ...prev,
+          text: formatDisplayText(args[offset + 2]),
+        });
+      }
+    }
+    else if (event.call === "table.set_cell_bgcolor") {
+      let table = tables.get(id);
+      if (!table) {
+        table = { id, position: "middle_right", columns: 1, rows: 1, cells: new Map() };
+        tables.set(id, table);
+      }
+      const offset = typeof args[0] === "number" || typeof args[0] === "object" ? 1 : 0;
+      const col = number(args[offset]);
+      const row = number(args[offset + 1]);
+      if (Number.isFinite(col) && Number.isFinite(row)) {
+        table.columns = Math.max(table.columns, col + 1);
+        table.rows = Math.max(table.rows, row + 1);
+        const cellKey = `${col}:${row}`;
+        const prev = table.cells.get(cellKey) || {};
+        if (typeof args[offset + 2] === "string") {
+          table.cells.set(cellKey, { ...prev, bgcolor: args[offset + 2] as string });
+        }
+      }
+    }
+    else if (event.call === "table.set_cell_text_color") {
+      let table = tables.get(id);
+      if (!table) {
+        table = { id, position: "middle_right", columns: 1, rows: 1, cells: new Map() };
+        tables.set(id, table);
+      }
+      const offset = typeof args[0] === "number" || typeof args[0] === "object" ? 1 : 0;
+      const col = number(args[offset]);
+      const row = number(args[offset + 1]);
+      if (Number.isFinite(col) && Number.isFinite(row)) {
+        table.columns = Math.max(table.columns, col + 1);
+        table.rows = Math.max(table.rows, row + 1);
+        const cellKey = `${col}:${row}`;
+        const prev = table.cells.get(cellKey) || {};
+        if (typeof args[offset + 2] === "string") {
+          table.cells.set(cellKey, { ...prev, textColor: args[offset + 2] as string });
+        }
       }
     }
   }
@@ -101,7 +191,7 @@ export function reduceEvents(events: PineVisualEvent[]) {
     label.stack = stack;
     previousBar = bar;
   });
-  return { handles: [...boxes, ...lines, ...labels], tables: [...tables.values()].filter((table) => table.cells.size > 0).slice(-1) };
+  return { handles: [...boxes, ...lines, ...labels], tables: [...tables.values()].filter((table) => table.cells.size > 0).slice(-2) };
 }
 
 interface Props {
@@ -112,13 +202,29 @@ interface Props {
 }
 
 function tableMinimumSize(table: Table): TableMinimum {
-  const columnWidths = Array.from({ length: table.columns }, (_, column) => {
-    const longest = Math.max(...Array.from({ length: table.rows }, (_, row) => table.cells.get(`${column}:${row}`)?.text?.length || 0), 3);
-    // This is intentionally slightly generous: it is a hard no-clipping
-    // minimum, not merely a visual preference.
-    return Math.max(86, Math.min(320, longest * 7.5 + 32));
+  let maxCol = 0;
+  let maxRow = 0;
+  for (const cellKey of table.cells.keys()) {
+    const [c, r] = cellKey.split(":").map(Number);
+    if (Number.isFinite(c) && c > maxCol) maxCol = c;
+    if (Number.isFinite(r) && r > maxRow) maxRow = r;
+  }
+  const cols = Math.max(1, Math.min(table.columns, maxCol + 1));
+  const rows = Math.max(1, Math.min(table.rows, maxRow + 1));
+
+  const columnWidths = Array.from({ length: cols }, (_, column) => {
+    let longest = 3;
+    for (let row = 0; row < rows; row++) {
+      const len = table.cells.get(`${column}:${row}`)?.text?.length || 0;
+      if (len > longest) longest = len;
+    }
+    return Math.max(54, Math.min(220, longest * 7 + 18));
   });
-  return { width: columnWidths.reduce((sum, value) => sum + value, 0), height: Math.max(62, 16 + table.rows * 23), columns: columnWidths };
+
+  const rawWidth = columnWidths.reduce((sum, value) => sum + value, 0);
+  const width = Math.max(120, Math.min(480, rawWidth));
+  const height = Math.max(48, Math.min(500, 20 + rows * 24));
+  return { width, height, columns: columnWidths };
 }
 
 function PineTableCard({ table }: { table: Table }) {
@@ -151,12 +257,15 @@ function PineTableCard({ table }: { table: Table }) {
 
   const clampToChart = (candidate: TableLayout, currentHeight?: number) => {
     const parent = cardRef.current?.parentElement?.getBoundingClientRect();
-    if (!parent) return candidate;
-    const effectiveHeight = currentHeight ?? (isMinimized ? 16 : candidate.height);
+    if (!parent || parent.width === 0 || parent.height === 0) return candidate;
+    const effectiveHeight = currentHeight ?? (isMinimized ? 18 : candidate.height);
+    const clampedWidth = Math.min(candidate.width, Math.max(80, parent.width - 24));
+    const clampedHeight = Math.min(effectiveHeight, Math.max(40, parent.height - 24));
     return {
-      ...candidate,
-      x: Math.max(0, Math.min(candidate.x, Math.max(0, parent.width - candidate.width))),
-      y: Math.max(0, Math.min(candidate.y, Math.max(0, parent.height - effectiveHeight))),
+      width: clampedWidth,
+      height: isMinimized ? candidate.height : clampedHeight,
+      x: Math.max(12, Math.min(candidate.x, Math.max(12, parent.width - clampedWidth - 12))),
+      y: Math.max(12, Math.min(candidate.y, Math.max(12, parent.height - clampedHeight - 12))),
     };
   };
 
@@ -220,10 +329,10 @@ function PineTableCard({ table }: { table: Table }) {
     return "DASHBOARD";
   }, [table]);
 
-  const fontSize = Math.max(9, Math.min(14, 10 * Math.min(layout.width / min.width, layout.height / min.height)));
+  const fontSize = Math.max(9, Math.min(13, 10 * Math.min(layout.width / min.width, layout.height / min.height)));
   return <div
     ref={cardRef}
-    className="absolute z-[7] select-none rounded border border-cyan-400/50 bg-[#070a10]/95 shadow-xl overflow-hidden"
+    className="absolute z-30 select-none rounded-lg border border-cyan-400/50 bg-[#070a10]/95 shadow-2xl overflow-hidden pointer-events-auto backdrop-blur-sm"
     style={{ left: layout.x, top: layout.y, width: layout.width, minWidth: isMinimized ? undefined : min.width, minHeight: isMinimized ? undefined : min.height }}
     onPointerMove={move}
     onPointerUp={() => { dragRef.current = null; }}
@@ -262,11 +371,34 @@ function PineTableCard({ table }: { table: Table }) {
     </div>
     {!isMinimized && (
       <>
-        <div style={{ display: "grid", minHeight: layout.height - 16, gridTemplateColumns: min.columns.map((column) => `minmax(${column}px, 1fr)`).join(" "), gridAutoRows: "minmax(23px, 1fr)", fontSize }}>
-          {Array.from({ length: table.columns * table.rows }, (_, index) => {
-            const cell = table.cells.get(`${index % table.columns}:${Math.floor(index / table.columns)}`);
-            return <div key={index} className="min-w-0 border border-slate-700/50 px-2 py-1 whitespace-nowrap" style={{ color: cell?.textColor || "#d1d4dc", background: cell?.bgcolor, lineHeight: 1.25 }}>{cell?.text || ""}</div>;
-          })}
+        <div
+          style={{
+            display: "grid",
+            minHeight: Math.max(30, layout.height - 18),
+            gridTemplateColumns: min.columns.map((column) => `minmax(${column}px, 1fr)`).join(" "),
+            gridAutoRows: "minmax(22px, 1fr)",
+            fontSize,
+          }}
+        >
+          {Array.from({ length: table.rows }, (_, r) =>
+            Array.from({ length: table.columns }, (_, c) => {
+              const cell = table.cells.get(`${c}:${r}`);
+              return (
+                <div
+                  key={`${c}:${r}`}
+                  className="min-w-0 border border-slate-700/50 px-2 py-0.5 flex items-center whitespace-nowrap overflow-hidden text-ellipsis"
+                  style={{
+                    color: cell?.textColor || "#d1d4dc",
+                    backgroundColor: cell?.bgcolor || "transparent",
+                    lineHeight: 1.25,
+                  }}
+                  title={cell?.text || ""}
+                >
+                  {cell?.text || ""}
+                </div>
+              );
+            })
+          )}
         </div>
         <div aria-label="Resize dashboard" title="Drag to resize" className="absolute bottom-0 right-0 h-4 w-4 cursor-se-resize border-l border-t border-cyan-400/60 bg-cyan-400/20" onPointerDown={(event) => begin(event, "resize")} />
       </>

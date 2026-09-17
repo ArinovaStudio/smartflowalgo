@@ -19,6 +19,12 @@ interface UseIndicatorPlotsArgs {
   candleSeriesRef: React.RefObject<ISeriesApi<any> | null>;
 }
 
+export interface IndicatorStatus {
+  status: "idle" | "loading" | "success" | "error";
+  name?: string;
+  message?: string;
+}
+
 /**
  * Re-runs every active Pine Script (built-in, user-toggled, and sandbox) each
  * time candles or the active script set changes, then reconciles the
@@ -45,6 +51,8 @@ export function useIndicatorPlots({
   const lastReplayKeyRef = useRef<string | null>(null);
   const requestedReplayKeyRef = useRef<string | null>(null);
   const [visualEvents, setVisualEvents] = useState<PineVisualEvent[]>([]);
+  const [indicatorStatus, setIndicatorStatus] = useState<IndicatorStatus>({ status: "idle" });
+  const statusDismissTimerRef = useRef<number | null>(null);
   const latestCandle = deferredCandles[deferredCandles.length - 1];
   const scriptSignature = activeIndicators
     .map((indicator) => `${indicator.id}:${indicator.latestVersion?.version || ""}:${indicator.latestVersion?.script || ""}`)
@@ -110,23 +118,56 @@ export function useIndicatorPlots({
     const visibleHigh = Math.max(...deferredCandles.map((candle) => candle.high));
     const visibleRange = Math.max(Number.EPSILON, visibleHigh - visibleLow);
 
+    // Show loading toast for the first script in the queue.
+    const firstScriptName = scriptsToRun[0]?.name || "Indicator";
+    if (statusDismissTimerRef.current) window.clearTimeout(statusDismissTimerRef.current);
+    setIndicatorStatus({ status: "loading", name: firstScriptName });
+
+    let lastError: string | undefined;
+
     for (const item of scriptsToRun) {
       const output = await runPineScriptOnCandles(item.script, item.id, item.name, deferredCandles, symbol, timeframe);
       if (requestedReplayKeyRef.current !== replayKey) return;
       if (output.error) {
+        lastError = output.error;
         console.warn(`Pine Script \"${item.name}\" was not rendered: ${output.error}`);
+        setIndicatorStatus({ status: "error", name: item.name, message: output.error });
+        statusDismissTimerRef.current = window.setTimeout(() => setIndicatorStatus({ status: "idle" }), 4000);
         continue;
       }
 
       output.plots.forEach((plot, plotIndex) => {
         const lineKey = `${item.id}_plot_${plotIndex}`;
-        const values = plot.data.map((point) => point.value).filter(Number.isFinite);
+        let plotLow = Number.NaN;
+        let plotHigh = Number.NaN;
+        let hasValues = false;
+
+        if (plot.times && plot.values) {
+          const len = plot.values.length;
+          for (let i = 0; i < len; i++) {
+            const val = plot.values[i];
+            if (!Number.isNaN(val)) {
+              if (!hasValues) {
+                plotLow = val;
+                plotHigh = val;
+                hasValues = true;
+              } else {
+                if (val < plotLow) plotLow = val;
+                if (val > plotHigh) plotHigh = val;
+              }
+            }
+          }
+        } else if (plot.data) {
+          const values = plot.data.map((point) => point.value).filter(Number.isFinite);
+          plotLow = values.length ? Math.min(...values) : Number.NaN;
+          plotHigh = values.length ? Math.max(...values) : Number.NaN;
+          hasValues = values.length > 0;
+        }
+
         // Overlay indicators can also expose counters/booleans through plot().
         // Do not put those values on the candle's shared right scale: a 0/1
         // series beside FX or Gold prices makes the actual candles disappear.
-        const plotLow = values.length ? Math.min(...values) : Number.NaN;
-        const plotHigh = values.length ? Math.max(...values) : Number.NaN;
-        const isPriceLike = plot.overlay && values.length > 0
+        const isPriceLike = plot.overlay && hasValues
           && plotHigh >= visibleLow - visibleRange * 5
           && plotLow <= visibleHigh + visibleRange * 5;
         if (!isPriceLike) {
@@ -150,10 +191,22 @@ export function useIndicatorPlots({
         }
 
         if (lineSeries) {
-          const lineData: LineData<Time>[] = plot.data
-            .filter((d) => !isNaN(d.value) && d.value !== null)
-            .map((d) => ({ time: d.time as Time, value: d.value }));
-          lineSeries.setData(lineData);
+          if (plot.times && plot.values) {
+            const len = plot.times.length;
+            const lineData: LineData<Time>[] = [];
+            for (let i = 0; i < len; i++) {
+              const val = plot.values[i];
+              if (!Number.isNaN(val)) {
+                lineData.push({ time: plot.times[i] as Time, value: val });
+              }
+            }
+            lineSeries.setData(lineData);
+          } else if (plot.data) {
+            const lineData: LineData<Time>[] = plot.data
+              .filter((d) => !isNaN(d.value) && d.value !== null)
+              .map((d) => ({ time: d.time as Time, value: d.value }));
+            lineSeries.setData(lineData);
+          }
         }
       });
 
@@ -193,11 +246,16 @@ export function useIndicatorPlots({
     if (requestedReplayKeyRef.current === replayKey) {
       lastReplayKeyRef.current = replayKey;
       setVisualEvents(nextVisualEvents);
+      // Show success toast only if no error was set by the final script.
+      if (!lastError) {
+        setIndicatorStatus({ status: "success", name: firstScriptName });
+        statusDismissTimerRef.current = window.setTimeout(() => setIndicatorStatus({ status: "idle" }), 2500);
+      }
     }
     }, 300);
     return () => window.clearTimeout(replayTimer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replayKey, marketDataReady]);
 
-  return { visualEvents };
+  return { visualEvents, indicatorStatus };
 }

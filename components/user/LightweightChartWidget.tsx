@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import SymbolSelectModal from "./SymbolSelectModal";
 import { BUILTIN_SCRIPTS } from "./constants";
 import { DrawingLayer } from "./DrawingLayer";
@@ -86,7 +88,7 @@ export default function LightweightChartWidget({
   const [sandboxOpen, setSandboxOpen] = useState(false);
   const [sandboxCode, setSandboxCode] = useState(BUILTIN_SCRIPTS.supertrend);
 
-  const { visualEvents } = useIndicatorPlots({
+  const { visualEvents, indicatorStatus } = useIndicatorPlots({
     candles,
     symbol,
     timeframe,
@@ -216,6 +218,63 @@ export default function LightweightChartWidget({
             <img src="/logo.jpg" alt="SmartFlowAlgo" className="h-5 w-auto rounded object-contain" />
             <span className="text-[11px] font-black tracking-wider text-slate-500 dark:text-slate-400 uppercase">SmartFlowAlgo</span>
           </div>
+
+          {/* Indicator Execution Status Toast */}
+          <AnimatePresence>
+            {indicatorStatus.status !== "idle" && (
+              <motion.div
+                key="indicator-status-toast"
+                initial={{ opacity: 0, y: -16, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -16, scale: 0.95 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="absolute top-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none select-none flex items-center gap-2.5 px-4 py-2 rounded-full shadow-2xl backdrop-blur-md border text-xs font-semibold"
+                style={{
+                  backgroundColor:
+                    indicatorStatus.status === "loading"
+                      ? "rgba(15, 23, 42, 0.9)"
+                      : indicatorStatus.status === "success"
+                      ? "rgba(6, 78, 59, 0.92)"
+                      : "rgba(127, 29, 29, 0.92)",
+                  borderColor:
+                    indicatorStatus.status === "loading"
+                      ? "rgba(59, 130, 246, 0.5)"
+                      : indicatorStatus.status === "success"
+                      ? "rgba(34, 197, 94, 0.5)"
+                      : "rgba(239, 68, 68, 0.5)",
+                  color: "#ffffff",
+                }}
+              >
+                {indicatorStatus.status === "loading" && (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400 shrink-0" />
+                    <span>
+                      Loading script: <span className="font-bold text-sky-200">{indicatorStatus.name}</span>...
+                    </span>
+                  </>
+                )}
+                {indicatorStatus.status === "success" && (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>
+                      Loaded script: <span className="font-bold text-emerald-200">{indicatorStatus.name}</span>
+                    </span>
+                  </>
+                )}
+                {indicatorStatus.status === "error" && (
+                  <>
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                    <span>
+                      Failed to load <span className="font-bold text-rose-200">{indicatorStatus.name}</span>
+                      {indicatorStatus.message && (
+                        <span className="opacity-80 text-[11px] ml-1">({indicatorStatus.message.slice(0, 60)})</span>
+                      )}
+                    </span>
+                  </>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <PineVisualLayer events={visualEvents} candles={candles} chartRef={chartRef} candleSeriesRef={candleSeriesRef} />
 
