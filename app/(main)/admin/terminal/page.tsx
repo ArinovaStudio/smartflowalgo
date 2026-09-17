@@ -112,7 +112,7 @@ const Terminal = () => {
     const chartSymbol =
         selectedIndicator?.symbol && selectedIndicator.symbol.trim() !== ""
             ? selectedIndicator.symbol.trim()
-            : "EURUSD";
+            : "XAUUSD";
 
     const chartInterval =
         selectedIndicator?.timeframe && selectedIndicator.timeframe.trim() !== ""
