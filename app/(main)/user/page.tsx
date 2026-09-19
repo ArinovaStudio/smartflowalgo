@@ -1,159 +1,103 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+"use client";
+
+import { useEffect, useState } from "react";
 import UserPortal from "@/components/user/UserPortal";
-import Terminal from "../admin/terminal/page";
 
-export default async function UserDashboardPage() {
-  const session = await getServerSession(authOptions);
+export default function UserDashboardClient() {
+  const [userData, setUserData] = useState<any>(null);
+  const [indicators, setIndicators] = useState<any[]>([]);
 
-  if (!session) {
-    redirect("/login");
-  }
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const userId = (session.user as any)?.id;
+  const user = async () => {
+    try {
+      const response = await fetch("/api/user/dashboard");
 
-  // Fetch full user data including plan, plan indicators, and direct indicator grants
-  const dbUser = await prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      plan: {
-        include: {
-          indicators: {
-            include: {
-              indicator: {
-                include: {
-                  versions: {
-                    orderBy: { createdAt: "desc" },
-                    take: 1,
-                    select: {
-                      id: true,
-                      version: true,
-                      script: true,
-                      releaseNotes: true,
-                      releasedAt: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-      indicatorAccess: {
-        where: { status: "GRANTED" },
-        include: {
-          indicator: {
-            include: {
-              versions: {
-                orderBy: { createdAt: "desc" },
-                take: 1,
-                select: {
-                  id: true,
-                  version: true,
-                  script: true,
-                  releaseNotes: true,
-                  releasedAt: true,
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
-
-  if (!dbUser) {
-    redirect("/login");
-  }
-
-  // Merge indicators: plan indicators + direct grants (deduplicated by id)
-  const indicatorMap = new Map<string, any>();
-
-  // 1. From assigned plan (only if PAID and plan exists)
-  if (dbUser.planType === "PAID" && dbUser.plan) {
-    for (const pi of dbUser.plan.indicators) {
-      const ind = pi.indicator;
-      if (ind && ind.status === "ACTIVE" && ind.isActive) {
-        indicatorMap.set(ind.id, {
-          id: ind.id,
-          name: ind.name,
-          slug: ind.slug,
-          description: ind.description,
-          symbol: ind.symbol,
-          market: ind.market,
-          timeframe: ind.timeframe,
-          currentVersion: ind.currentVersion,
-          distributionType: ind.distributionType,
-          tradingViewId: ind.tradingViewId,
-          tradingViewUrl: ind.tradingViewUrl,
-          publisher: ind.publisher,
-          latestVersion: ind.versions[0] ?? null,
-          accessSource: `Plan: ${dbUser.plan!.name}`,
-          expiresAt: dbUser.renualDate?.toISOString() ?? null,
-        });
+      if (!response.ok) {
+        throw new Error("Failed to fetch user data");
       }
+
+      const data = await response.json();
+
+      setUserData(data.user);
+      setIndicators(data.indicators ?? []);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      setError("Failed to load user data");
+    } finally {
+      setLoading(false);
     }
-  }
-
-  // 2. Directly granted via UserIndicatorAccess
-  for (const uia of dbUser.indicatorAccess) {
-    const ind = uia.indicator;
-    if (!ind) continue;
-    // skip if expired
-    if (uia.expiresAt && uia.expiresAt < new Date()) continue;
-    if (!indicatorMap.has(ind.id)) {
-      indicatorMap.set(ind.id, {
-        id: ind.id,
-        name: ind.name,
-        slug: ind.slug,
-        description: ind.description,
-        symbol: ind.symbol,
-        market: ind.market,
-        timeframe: ind.timeframe,
-        currentVersion: ind.currentVersion,
-        distributionType: ind.distributionType,
-        tradingViewId: ind.tradingViewId,
-        tradingViewUrl: ind.tradingViewUrl,
-        publisher: ind.publisher,
-        latestVersion: ind.versions[0] ?? null,
-        accessSource: uia.reason || "Direct Grant",
-        expiresAt: uia.expiresAt?.toISOString() ?? null,
-      });
-    }
-  }
-
-  const indicators = Array.from(indicatorMap.values());
-
-  const userData = {
-    id: dbUser.id,
-    name: dbUser.name,
-    email: dbUser.email,
-    tradingViewId: dbUser.tradingViewId,
-    broker: dbUser.broker,
-    mobile: dbUser.mobile,
-    userType: dbUser.userType,
-    image: dbUser.image,
-    experience: dbUser.experience,
-    interest: dbUser.interest,
-    createdAt: dbUser.createdAt?.toISOString() ?? null,
-    planType: dbUser.planType,
-    planDate: dbUser.planDate?.toISOString() ?? null,
-    renualDate: dbUser.renualDate?.toISOString() ?? null,
-    plan: dbUser.plan
-      ? {
-        id: dbUser.plan.id,
-        name: dbUser.plan.name,
-        badge: dbUser.plan.badge,
-        price: dbUser.plan.price,
-      }
-      : null,
   };
 
+  useEffect(() => {
+    user();
+  }, []);
+
+if (loading) {
   return (
-    <>
-      <UserPortal user={userData} indicators={indicators} />
-    </>
+    <div className="h-screen w-screen flex items-center justify-center overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white">
+      <div className="flex flex-col items-center gap-6">
+
+        {/* SmartFlowAlgo Branding */}
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-500 flex items-center justify-center font-black text-lg">
+            SF
+          </div>
+
+          <div>
+            <h2 className="font-extrabold text-base tracking-tight bg-gradient-to-r from-sky-400 to-indigo-400 bg-clip-text text-transparent">
+              SmartFlowAlgo
+            </h2>
+
+            <p className="text-[10px] text-slate-400 font-semibold">
+              Trading Platform
+            </p>
+          </div>
+        </div>
+
+        {/* Animated Loader */}
+        <div className="relative h-14 w-14 flex items-center justify-center">
+          <div className="absolute inset-0 rounded-full border-[3px] border-slate-200 dark:border-slate-800" />
+
+          <div className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-sky-500 animate-spin" />
+
+          <div className="h-7 w-7 rounded-full bg-sky-500/10 flex items-center justify-center">
+            <div className="h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
+          </div>
+        </div>
+
+        {/* Loading Text */}
+        <div className="text-center space-y-1.5">
+          <h3 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">
+            Preparing Your Workspace
+          </h3>
+
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Syncing your trading account and indicators...
+          </p>
+        </div>
+
+        {/* Animated Progress Bar */}
+        <div className="h-1 w-48 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800">
+          <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-sky-500 to-indigo-500 animate-[loading_1.5s_ease-in-out_infinite]" />
+        </div>
+
+        <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+          Secure Trading Environment
+        </span>
+      </div>
+    </div>
+  );
+}
+  if (error) {
+    return <div>{error}</div>;
+  }
+
+  return (
+    <UserPortal
+      user={userData}
+      indicators={indicators}
+    />
   );
 }

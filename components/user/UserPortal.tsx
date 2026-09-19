@@ -260,8 +260,8 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
               setMobileMenuOpen(false);
             }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === "dashboard"
-                ? "bg-sky-500 text-white shadow-lg shadow-sky-500/20"
-                : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white"
+              ? "bg-sky-500 text-white shadow-lg shadow-sky-500/20"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white"
               } ${sidebarCollapsed ? "justify-center px-2" : ""}`}
           >
             <LayoutDashboard className="h-4 w-4 shrink-0" />
@@ -274,8 +274,8 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
               setMobileMenuOpen(false);
             }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === "chart"
-                ? "bg-sky-500 text-white shadow-lg shadow-sky-500/20"
-                : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white"
+              ? "bg-sky-500 text-white shadow-lg shadow-sky-500/20"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white"
               } ${sidebarCollapsed ? "justify-center px-2" : ""}`}
           >
             <LineChart className="h-4 w-4 shrink-0" />
@@ -295,8 +295,8 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
               setMobileMenuOpen(false);
             }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === "profile"
-                ? "bg-sky-500 text-white shadow-lg shadow-sky-500/20"
-                : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white"
+              ? "bg-sky-500 text-white shadow-lg shadow-sky-500/20"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white"
               } ${sidebarCollapsed ? "justify-center px-2" : ""}`}
           >
             <User className="h-4 w-4 shrink-0" />
@@ -533,8 +533,8 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                         <div
                           key={ind.id}
                           className={`rounded-2xl border transition-all p-5 flex flex-col justify-between ${isSelected
-                              ? "border-sky-500 dark:border-sky-500 bg-sky-500/5 dark:bg-sky-500/10 shadow-lg shadow-sky-500/10"
-                              : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 hover:border-sky-500/40"
+                            ? "border-sky-500 dark:border-sky-500 bg-sky-500/5 dark:bg-sky-500/10 shadow-lg shadow-sky-500/10"
+                            : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 hover:border-sky-500/40"
                             }`}
                         >
                           <div className="space-y-3">
@@ -542,8 +542,8 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                               <div className="flex items-center gap-2.5">
                                 <div
                                   className={`p-2.5 rounded-xl border ${isSelected
-                                      ? "bg-sky-500 text-white border-sky-400"
-                                      : "bg-sky-500/10 text-sky-500 border-sky-500/20"
+                                    ? "bg-sky-500 text-white border-sky-400"
+                                    : "bg-sky-500/10 text-sky-500 border-sky-500/20"
                                     }`}
                                 >
                                   <LineChart className="h-5 w-5" />
@@ -600,8 +600,8 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                               type="button"
                               onClick={() => toggleIndicatorSelection(ind.id, ind.name)}
                               className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${isSelected
-                                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                                  : "border-slate-200 dark:border-slate-800 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900"
+                                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                                : "border-slate-200 dark:border-slate-800 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900"
                                 }`}
                             >
                               <Check className={`h-3.5 w-3.5 ${isSelected ? "opacity-100" : "opacity-30"}`} />
@@ -944,8 +944,8 @@ export default function UserPortal({ user, indicators }: UserPortalProps) {
                       <div className="mt-1">
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase ${isPaid
-                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-                              : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                            : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20"
                             }`}
                         >
                           <ShieldCheck className="w-3.5 h-3.5" />
