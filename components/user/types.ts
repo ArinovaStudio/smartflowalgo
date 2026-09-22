@@ -71,4 +71,46 @@ export interface SymbolInfo {
   [key: string]: unknown;
 }
 
+export interface UserIndicator {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  symbol: string | null;
+  market: string | null;
+  timeframe: string | null;
+  currentVersion: string | null;
+  distributionType: string | null;
+  tradingViewId: string | null;
+  tradingViewUrl: string | null;
+  publisher: string | null;
+  latestVersion?: {
+    id: string;
+    version: string;
+    script?: string | null;
+    releaseNotes: string | null;
+    releasedAt: string | null;
+  } | null;
+  accessSource?: string;
+  expiresAt?: string | null;
+}
+
+export interface PortalUser {
+  id: string;
+  name: string | null;
+  email: string;
+  tradingViewId: string | null;
+  broker?: string | null;
+  mobile?: string | null;
+  userType?: string | null;
+  image?: string | null;
+  experience?: string | null;
+  interest?: string | null;
+  createdAt?: string | null;
+  planType: string | null;
+  planDate?: string | null;
+  renualDate?: string | null;
+  plan?: { id: string; name: string; badge: string | null; price?: number | null } | null;
+}
+
 export type { CandleData };

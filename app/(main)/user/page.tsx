@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import UserPortal from "@/components/user/UserPortal";
+import DashboardView from "@/components/user/DashboardView";
+
 
 export default function UserDashboardClient() {
   const [userData, setUserData] = useState<any>(null);
@@ -95,9 +97,6 @@ if (loading) {
   }
 
   return (
-    <UserPortal
-      user={userData}
-      indicators={indicators}
-    />
+    <DashboardView />
   );
 }
