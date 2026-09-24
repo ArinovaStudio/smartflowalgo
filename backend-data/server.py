@@ -12,6 +12,7 @@ Pure pass-through bridge:
 """
 
 import asyncio
+import re
 import os
 import sys
 import logging
@@ -23,6 +24,14 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import rpyc
+
+# Pine Script server-side execution engine (pandas-ta backed)
+try:
+    import pine_runner
+    PINE_RUNNER_AVAILABLE = True
+except ImportError:
+    PINE_RUNNER_AVAILABLE = False
+    logger_placeholder = None  # logger not yet defined; warn below at startup
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -291,6 +300,10 @@ app.add_middleware(
 @app.on_event("startup")
 async def on_startup():
     logger.info(f"Starting SmartFlowAlgo MT5 Real-Time Bridge on port {PORT}...")
+    if not PINE_RUNNER_AVAILABLE:
+        logger.warning("pine_runner not available — install pandas pandas-ta numpy to enable server-side Pine execution")
+    else:
+        logger.info("pine_runner loaded — server-side Pine Script execution enabled")
     asyncio.create_task(ensure_mt5_connected())
     asyncio.create_task(background_tick_streamer())
     asyncio.create_task(background_health_monitor())
@@ -460,7 +473,204 @@ async def get_candles(
         "data": candles,
     }
 
-# ── 5. Multi-User WebSocket Real-Time Stream ────────────────────────────────
+
+def extract_pine_timeframes(script: str) -> List[str]:
+    """
+    Scan a Pine Script for request.security() calls and extract all referenced
+    timeframe strings (the second argument).
+    Returns a deduplicated list, e.g. ["60", "240", "D", "30"].
+    """
+    # Pattern: request.security(<sym>, "<tf>", ...)
+    tfs = re.findall(r'request\.security\s*\([^,]+,\s*"([^"]+)"', script)
+    tfs += re.findall(r"request\.security\s*\([^,]+,\s*'([^']+)'", script)
+    return list(dict.fromkeys(tfs))  # deduplicate preserving order
+
+
+def pine_tf_to_server_tf(pine_tf: str) -> str:
+    """
+    Convert Pine timeframe string to server candle-fetch key.
+    Pine: "1" -> 1m, "5" -> 5m, "15" -> 15m, "30" -> 30m,
+          "60" -> 1h, "120" -> 2h, "240" -> 4h, "D" -> 1d,
+          "W" -> 1w, "M" -> 1mn
+    """
+    TF_MAP = {
+        "1": "1m", "2": "2m", "3": "3m", "5": "5m",
+        "15": "15m", "30": "30m",
+        "60": "1h", "120": "2h", "180": "3h", "240": "4h",
+        "D": "1d", "1D": "1d", "W": "1w", "M": "1mn",
+    }
+    return TF_MAP.get(pine_tf.upper(), "1m")
+
+
+def pine_tf_candle_count(pine_tf: str) -> int:
+    """Return how many candles to fetch per timeframe (enough for zone detection)."""
+    COUNTS = {
+        "1": 5000, "5": 2000, "15": 1500, "30": 1000,
+        "60": 800, "120": 500, "240": 500,
+        "D": 365, "W": 100, "M": 60,
+    }
+    return COUNTS.get(pine_tf.upper(), 1000)
+
+
+# ── 5. Pine Script Execution ─────────────────────────────────────────────────
+
+from fastapi import Body
+from pydantic import BaseModel
+
+class RunIndicatorRequest(BaseModel):
+    script: str
+    symbol: str = "CUSTOM"
+    timeframe: str = "1m"
+    indicator_id: str = "script"
+    candles: list = []  # optional: if empty, fetches from MT5 cache
+
+@app.post("/api/run-indicator")
+async def run_indicator_rest(req: RunIndicatorRequest):
+    """
+    Execute a Pine Script against real candle data server-side.
+    Returns plots[] and visualEvents[] in the format PineVisualLayer expects.
+    If candles is empty, uses the cached MT5 snapshot for symbol+timeframe.
+    """
+    if not PINE_RUNNER_AVAILABLE:
+        return {"success": False, "error": "pine_runner not installed on server", "plots": [], "visualEvents": []}
+
+    candles = req.candles
+    if not candles:
+        key = f"{req.symbol.upper().strip()}_{req.timeframe.lower().strip()}"
+        candles = candle_cache.get(key, [])
+        if not candles and broker_info.get("connected"):
+            async with rpc_lock:
+                candles = await asyncio.to_thread(fetch_snapshot_sync, req.symbol, req.timeframe)
+
+    if not candles:
+        return {"success": False, "error": "No candle data available", "plots": [], "visualEvents": []}
+
+    # Detect and fetch multi-timeframe candles required by request.security()
+    extra_candles: dict = {}
+    pine_tfs = extract_pine_timeframes(req.script)
+    if pine_tfs and broker_info.get("connected"):
+        for pine_tf in pine_tfs:
+            server_tf = pine_tf_to_server_tf(pine_tf)
+            count     = pine_tf_candle_count(pine_tf)
+            key       = f"{req.symbol.upper().strip()}_{pine_tf.upper()}"
+            # Try cache first
+            cached_key = f"{req.symbol.upper().strip()}_{server_tf}"
+            tf_candles = candle_cache.get(cached_key, [])
+            if not tf_candles:
+                async with rpc_lock:
+                    tf_candles = await asyncio.to_thread(
+                        fetch_snapshot_sync, req.symbol, server_tf, count
+                    )
+            if tf_candles:
+                extra_candles[key] = tf_candles
+                logger.info(f"MTF fetch: {key} -> {len(tf_candles)} candles")
+            else:
+                logger.warning(f"MTF fetch failed for {key} (tf={server_tf})")
+
+    try:
+        result = await asyncio.to_thread(
+            pine_runner.run,
+            req.script, candles, req.symbol, req.timeframe, req.indicator_id,
+            extra_candles
+        )
+        return {
+            "success": result.get("error") is None,
+            "error": result.get("error"),
+            "plots": result.get("plots", []),
+            "visualEvents": result.get("visualEvents", []),
+        }
+    except Exception as e:
+        logger.error(f"Pine runner error: {e}")
+        return {"success": False, "error": str(e), "plots": [], "visualEvents": []}
+
+
+async def _handle_run_indicator(websocket: WebSocket, msg: dict, client_id: str):
+    """Run a Pine Script and send the result back over the WebSocket."""
+    if not PINE_RUNNER_AVAILABLE:
+        await websocket.send_json({
+            "type": "indicator_result",
+            "client_id": client_id,
+            "indicator_id": msg.get("indicator_id", "script"),
+            "success": False,
+            "error": "pine_runner not installed on server",
+            "plots": [],
+            "visualEvents": [],
+        })
+        return
+
+    script = msg.get("script", "")
+    symbol = msg.get("symbol", "CUSTOM").upper().strip()
+    timeframe = msg.get("timeframe", "1m").lower().strip()
+    indicator_id = msg.get("indicator_id", "script")
+
+    # Use provided candles or fall back to MT5 cache
+    candles = msg.get("candles") or []
+    if not candles:
+        key = f"{symbol}_{timeframe}"
+        candles = candle_cache.get(key, [])
+        if not candles and broker_info.get("connected"):
+            async with rpc_lock:
+                candles = await asyncio.to_thread(fetch_snapshot_sync, symbol, timeframe)
+
+    if not candles:
+        await websocket.send_json({
+            "type": "indicator_result",
+            "client_id": client_id,
+            "indicator_id": indicator_id,
+            "success": False,
+            "error": "No candle data available for this symbol/timeframe",
+            "plots": [],
+            "visualEvents": [],
+        })
+        return
+
+    # Detect and fetch multi-timeframe candles
+    extra_candles_ws: dict = {}
+    pine_tfs_ws = extract_pine_timeframes(script)
+    if pine_tfs_ws and broker_info.get("connected"):
+        for pine_tf in pine_tfs_ws:
+            server_tf = pine_tf_to_server_tf(pine_tf)
+            count     = pine_tf_candle_count(pine_tf)
+            key       = f"{symbol}_{pine_tf.upper()}"
+            cached_key = f"{symbol}_{server_tf}"
+            tf_candles = candle_cache.get(cached_key, [])
+            if not tf_candles:
+                async with rpc_lock:
+                    tf_candles = await asyncio.to_thread(
+                        fetch_snapshot_sync, symbol, server_tf, count
+                    )
+            if tf_candles:
+                extra_candles_ws[key] = tf_candles
+
+    try:
+        result = await asyncio.to_thread(
+            pine_runner.run,
+            script, candles, symbol, timeframe, indicator_id,
+            extra_candles_ws
+        )
+        await websocket.send_json({
+            "type": "indicator_result",
+            "client_id": client_id,
+            "indicator_id": indicator_id,
+            "success": result.get("error") is None,
+            "error": result.get("error"),
+            "plots": result.get("plots", []),
+            "visualEvents": result.get("visualEvents", []),
+        })
+    except Exception as e:
+        logger.error(f"Pine runner WebSocket error for {indicator_id}: {e}")
+        await websocket.send_json({
+            "type": "indicator_result",
+            "client_id": client_id,
+            "indicator_id": indicator_id,
+            "success": False,
+            "error": str(e),
+            "plots": [],
+            "visualEvents": [],
+        })
+
+
+# ── 6. Multi-User WebSocket Real-Time Stream ────────────────────────────────
 def unsubscribe_client_from_topics(client_id: str):
     """Removes a client ID from all topic subscriber lists."""
     for topic, subs in list(topic_subscribers.items()):
@@ -556,6 +766,10 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "client_id": cid,
                                 "data": cached_symbols,
                             })
+
+                elif mtype == "run_indicator":
+                    await _handle_run_indicator(websocket, msg, cid)
+
 
             except Exception as e:
                 logger.debug(f"WS message error for {client_id}: {e}")

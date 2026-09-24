@@ -19,6 +19,8 @@ export interface PineVisualEvent {
   pineHandleId?: number;
   indicatorId?: string;
   style?: Record<string, unknown>;
+  /** Offset added to bar_index to address the full candle array (candles.length - effectiveCandles.length). */
+  barIndexOffset?: number;
 }
 
 export interface PineRunResult {
@@ -77,9 +79,35 @@ function getFactory(script: string, indicatorId: string, indicatorName: string, 
     // supported text-color event with a private marker; PineVisualLayer reads
     // the marker as text and leaves the next real text-color call intact.
     .replace(/^([ \t]*)box\.set_text\(\s*([A-Za-z_$][\w$]*)\s*,\s*(.+)\)\s*;?\s*$/gm, '$1box.set_text_color($2, "__PINE_BOX_TEXT__" + ($3))')
+    // box.set_lefttop(id, left, top) → box.set_left(id, left) + box.set_top(id, top)
+    // box.set_rightbottom(id, right, bottom) → box.set_right(id, right) + box.set_bottom(id, bottom)
+    // These are Pine v5 convenience setters that change two coordinates at once.
+    // Expand them into the two individual supported setters before the stripping
+    // regex runs so neither coordinate is silently dropped.
+    .replace(
+      /^([ \t]*)box\.set_lefttop\(\s*([^,]+?)\s*,\s*([^,]+?)\s*,\s*([^)]+?)\s*\)\s*;?\s*$/gm,
+      "$1box.set_left($2, $3)\n$1box.set_top($2, $4)",
+    )
+    .replace(
+      /^([ \t]*)box\.set_rightbottom\(\s*([^,]+?)\s*,\s*([^,]+?)\s*,\s*([^)]+?)\s*\)\s*;?\s*$/gm,
+      "$1box.set_right($2, $3)\n$1box.set_bottom($2, $4)",
+    )
+    // Method-call syntax: id.set_lefttop(left, top) / id.set_rightbottom(right, bottom)
+    .replace(
+      /^([ \t]*)([A-Za-z_$][\w$]*)\.set_lefttop\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)\s*;?\s*$/gm,
+      "$1$2.set_left($3)\n$1$2.set_top($4)",
+    )
+    .replace(
+      /^([ \t]*)([A-Za-z_$][\w$]*)\.set_rightbottom\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)\s*;?\s*$/gm,
+      "$1$2.set_right($3)\n$1$2.set_bottom($4)",
+    )
     .replace(
       /^\s*box\.(set_[A-Za-z0-9_]+)\s*\([^\n]*\)\s*;?\s*$/gm,
-      (statement, method: string) => supportedBoxSetters.has(method) ? statement : "",
+      (statement, method: string) => {
+        if (supportedBoxSetters.has(method)) return statement;
+        console.warn(`[PineAdapter] Dropping unsupported box setter: box.${method}() — add a rewrite rule if this drawing is missing.`);
+        return "";
+      },
     )
     // The installed compiler maps `timenow` incorrectly in its factory path,
     // leaving it as an unbound identifier. `time` below is supplied in Pine's
@@ -519,16 +547,63 @@ function cross(a: Series | null, b: Series | null, up: boolean) {
  */
 type VisualObjectState = { create?: PineVisualEvent; updates: Map<string, PineVisualEvent> };
 
+/**
+ * Normalise coordinate arguments for line/box/label creation events.
+ * Pine's `time` built-in returns milliseconds; Lightweight Charts expects
+ * epoch-seconds. Any x-coord larger than 1e12 is treated as milliseconds.
+ */
+function normalizeEventArgs(call: string, args: unknown[]): unknown[] {
+  const MS_THRESHOLD = 1e12;
+  const toSec = (v: unknown) =>
+    typeof v === "number" && v > MS_THRESHOLD ? Math.round(v / 1000) : v;
+  const normalized = [...args];
+  if (call === "line.new") {
+    normalized[0] = toSec(normalized[0]);
+    normalized[2] = toSec(normalized[2]);
+  } else if (call === "box.new") {
+    normalized[0] = toSec(normalized[0]);
+    normalized[2] = toSec(normalized[2]);
+  } else if (call === "label.new") {
+    normalized[0] = toSec(normalized[0]);
+  }
+  return normalized;
+}
+
 function recordVisualEvent(objects: Map<string, VisualObjectState>, event: PineVisualEvent) {
   const [namespace, action] = event.call.split(".");
   if (!namespace || namespace === "Std") return;
-  const objectKey = `${namespace}:${event.pineHandleId ?? "new"}`;
+
+  // plotshape / plotchar / plotarrow are per-bar signals, not persistent drawing
+  // objects. Each truthy call gets its own unique slot keyed by bar index so
+  // signals from earlier bars are never overwritten by later bars.
+  if (
+    event.call === "plotshape" ||
+    event.call === "plotchar" ||
+    event.call === "plotarrow"
+  ) {
+    const val = event.args[0];
+    const isTruthy =
+      val !== false &&
+      val !== 0 &&
+      val !== null &&
+      val !== undefined &&
+      !(typeof val === "number" && !Number.isFinite(val));
+    if (!isTruthy) return;
+    const shapeKey = `${event.call}:${event.barIndex}`;
+    if (!objects.has(shapeKey)) {
+      objects.set(shapeKey, { create: event, updates: new Map() });
+    }
+    return;
+  }
+
+  const objectKey = `${event.indicatorId || "script"}:${namespace}:${event.pineHandleId ?? "new"}`;
   if (action === "new") {
+    const normalizedEvent = { ...event, args: normalizeEventArgs(event.call, event.args) };
     const existing = objects.get(objectKey);
     if (existing) {
-      existing.create = event;
+      existing.create = normalizedEvent;
     } else {
-      objects.set(objectKey, { create: event, updates: new Map() });
+      objects.set(objectKey, { create: normalizedEvent, updates: new Map() });
     }
     return;
   }
@@ -629,6 +704,9 @@ export async function runPineScriptOnCandles(
     // Limit historical replay to the newest 2,000 candles to eliminate lag while ensuring technical indicator convergence
     const maxBars = 2000;
     const effectiveCandles = candles.length > maxBars ? candles.slice(-maxBars) : candles;
+    // The offset lets PineVisualLayer map a bar_index from the sliced replay
+    // window back to the correct position in the full candle array.
+    const barIndexOffset = candles.length - effectiveCandles.length;
     (context as any).__candles = effectiveCandles;
     const inputValues = indicator.metainfo.inputs.map((input: any) => input.defval);
     instance.init?.(context, (index: number) => inputValues[index]);
@@ -693,11 +771,18 @@ export async function runPineScriptOnCandles(
       };
     });
 
+    // Stamp the bar-index offset on every event so PineVisualLayer can
+    // correctly translate replay bar indices into full-history candle indices.
+    const rawEvents = visualEventsFromState(visualObjectState);
+    const visualEvents = barIndexOffset === 0
+      ? rawEvents
+      : rawEvents.map((ev) => ({ ...ev, barIndexOffset }));
+
     return {
       name: indicator.name || indicatorName,
       overlay: indicator.metainfo.is_price_study !== false,
       plots,
-      visualEvents: visualEventsFromState(visualObjectState),
+      visualEvents,
     };
   } catch (error) {
     return {

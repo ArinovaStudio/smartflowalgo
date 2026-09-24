@@ -4,7 +4,57 @@ import { useEffect, useRef, useState } from "react";
 import { LineSeries, createSeriesMarkers, IChartApi, ISeriesApi, SeriesMarker, Time, LineData } from "lightweight-charts";
 import { BUILTIN_SCRIPTS } from "./constants";
 import type { CandleData, IndicatorMeta } from "./types";
-import { runPineScriptOnCandles, type PineVisualEvent } from "@/lib/pineJsLightweightAdapter";
+import { runPineScriptOnCandles, type PineVisualEvent, type PineRunResult } from "@/lib/pineJsLightweightAdapter";
+
+/**
+ * Executes a Pine Script against real candles.
+ * Prioritizes the high-accuracy backend Python engine (MT5 server),
+ * falling back to the client-side adapter if the backend bridge is unavailable.
+ */
+async function runIndicatorExecution(
+  script: string,
+  indicatorId: string,
+  indicatorName: string,
+  candles: CandleData[],
+  symbol: string,
+  timeframe: string
+): Promise<PineRunResult> {
+  try {
+    const res = await fetch("http://127.0.0.1:8000/api/run-indicator", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        script,
+        symbol,
+        timeframe,
+        indicator_id: indicatorId,
+        candles,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        return {
+          name: indicatorName,
+          overlay: true,
+          plots: (data.plots || []).map((p: any) => ({
+            id: p.id,
+            title: p.title || indicatorName,
+            color: p.color || "#2962FF",
+            lineWidth: p.lineWidth || 2,
+            overlay: p.overlay !== false,
+            data: p.data || [],
+          })),
+          visualEvents: data.visualEvents || [],
+        };
+      }
+    }
+  } catch {
+    // Backend bridge server offline; fall back to client runtime
+  }
+
+  return runPineScriptOnCandles(script, indicatorId, indicatorName, candles, symbol, timeframe);
+}
 
 interface UseIndicatorPlotsArgs {
   candles: CandleData[];
@@ -24,6 +74,7 @@ export interface IndicatorStatus {
   name?: string;
   message?: string;
 }
+
 
 /**
  * Re-runs every active Pine Script (built-in, user-toggled, and sandbox) each
@@ -126,7 +177,7 @@ export function useIndicatorPlots({
     let lastError: string | undefined;
 
     for (const item of scriptsToRun) {
-      const output = await runPineScriptOnCandles(item.script, item.id, item.name, deferredCandles, symbol, timeframe);
+      const output = await runIndicatorExecution(item.script, item.id, item.name, deferredCandles, symbol, timeframe);
       if (requestedReplayKeyRef.current !== replayKey) return;
       if (output.error) {
         lastError = output.error;
