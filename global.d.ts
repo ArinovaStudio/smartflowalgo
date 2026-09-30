@@ -27,4 +27,6 @@ declare module "react" {
   }
 }
 
+declare module "ws";
+
 export {};

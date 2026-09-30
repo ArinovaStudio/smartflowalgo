@@ -22,23 +22,6 @@ services:
     command: sh -c "npm install && npx prisma generate && npm run dev"
     depends_on:
       - postgres
-      - mt5-bridge-dev
-    networks:
-      - smartflow-net
-
-  # ==========================================
-  # MT5 Bridge Development (Hot Reloading)
-  # ==========================================
-  mt5-bridge-dev:
-    image: node:20-alpine
-    container_name: smartflowalgo-bridge-dev
-    working_dir: /app
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./backend-data:/app
-      - /app/node_modules
-    command: sh -c "npm install && node --watch server.js"
     networks:
       - smartflow-net
 

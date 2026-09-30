@@ -7,18 +7,75 @@ import {
   ColorType,
   IChartApi,
   ISeriesApi,
-  CandlestickData,
   Time,
 } from "lightweight-charts";
 import type { CandleData, SymbolInfo, TickState } from "./types";
+import { LiveCandleStream, type Candle, type Timeframe } from "./liveCandleStream";
 
-const SYMBOLS_ENDPOINT = "http://127.0.0.1:8000/api/symbols";
-const RECONNECT_DELAY_MS = 2500;
+const DEFAULT_SYMBOLS: SymbolInfo[] = [
+  { symbol: "EURUSD", name: "Euro / US Dollar", category: "Forex", digits: 5 },
+  { symbol: "GBPUSD", name: "British Pound / US Dollar", category: "Forex", digits: 5 },
+  { symbol: "USDJPY", name: "US Dollar / Japanese Yen", category: "Forex", digits: 3 },
+  { symbol: "AUDUSD", name: "Australian Dollar / US Dollar", category: "Forex", digits: 5 },
+  { symbol: "USDCAD", name: "US Dollar / Canadian Dollar", category: "Forex", digits: 5 },
+  { symbol: "USDCHF", name: "US Dollar / Swiss Franc", category: "Forex", digits: 5 },
+  { symbol: "NZDUSD", name: "New Zealand Dollar / US Dollar", category: "Forex", digits: 5 },
+  { symbol: "XAUUSD", name: "Gold / US Dollar", category: "Metals", digits: 2 },
+  { symbol: "BTCUSD", name: "Bitcoin / US Dollar", category: "Crypto", digits: 2 },
+  { symbol: "ETHUSD", name: "Ethereum / US Dollar", category: "Crypto", digits: 2 },
+];
+
+function mapToTimeframe(tf: string): Timeframe {
+  const clean = tf.toUpperCase().replace(/\s+/g, "");
+  const map: Record<string, Timeframe> = {
+    "1M": "M1",
+    "M1": "M1",
+    "2M": "M2",
+    "M2": "M2",
+    "3M": "M3",
+    "M3": "M3",
+    "4M": "M4",
+    "M4": "M4",
+    "5M": "M5",
+    "M5": "M5",
+    "6M": "M6",
+    "M6": "M6",
+    "10M": "M10",
+    "M10": "M10",
+    "12M": "M12",
+    "M12": "M12",
+    "15M": "M15",
+    "M15": "M15",
+    "20M": "M20",
+    "M20": "M20",
+    "30M": "M30",
+    "M30": "M30",
+    "1H": "H1",
+    "H1": "H1",
+    "2H": "H2",
+    "H2": "H2",
+    "3H": "H3",
+    "H3": "H3",
+    "4H": "H4",
+    "H4": "H4",
+    "6H": "H6",
+    "H6": "H6",
+    "8H": "H8",
+    "H8": "H8",
+    "12H": "H12",
+    "H12": "H12",
+    "1D": "D1",
+    "D1": "D1",
+    "1W": "W1",
+    "W1": "W1",
+    "1MN": "MN1",
+    "MN1": "MN1",
+  };
+  return map[clean] || "M1";
+}
 
 /**
- * Generates (and memoizes) a unique id for this chart instance, used by the
- * bridge server to route snapshots/updates to the correct client when
- * multiple charts are subscribed simultaneously.
+ * Generates (and memoizes) a unique id for this chart instance.
  */
 export function useClientId(): string {
   return useMemo(() => {
@@ -29,28 +86,16 @@ export function useClientId(): string {
   }, []);
 }
 
-/** Fetches the initial symbol list once via REST, as a fallback/primer before the WS connects. */
+/** Provides default symbol list for the symbol selector modal. */
 export function useInitialSymbols(setSymbol: React.Dispatch<React.SetStateAction<string>>) {
-  const [symbolsList, setSymbolsList] = useState<SymbolInfo[]>([]);
-  const [restError, setRestError] = useState<string | null>(null);
+  const [symbolsList, setSymbolsList] = useState<SymbolInfo[]>(DEFAULT_SYMBOLS);
+  const [restError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(SYMBOLS_ENDPOINT)
-      .then((res) => res.json())
-      .then((json) => {
-        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          setSymbolsList(json.data);
-          setSymbol((prev) => {
-            if (prev && json.data.some((s: SymbolInfo) => s.symbol === prev)) return prev;
-            if (json.data.some((s: SymbolInfo) => s.symbol === "EURUSD")) return "EURUSD";
-            return json.data[0].symbol;
-          });
-          setRestError(null);
-        }
-      })
-      .catch(() => {
-        /* Non-fatal: the WebSocket connection may still succeed and supply symbols. */
-      });
+    setSymbol((prev) => {
+      if (prev && DEFAULT_SYMBOLS.some((s) => s.symbol === prev)) return prev;
+      return "EURUSD";
+    });
   }, [setSymbol]);
 
   return { symbolsList, setSymbolsList, restError };
@@ -58,15 +103,12 @@ export function useInitialSymbols(setSymbol: React.Dispatch<React.SetStateAction
 
 interface UseLightweightChartArgs {
   isDark: boolean;
-  /** MT5's authoritative number of decimal places for the selected symbol. */
   pricePrecision?: number;
 }
 
 /**
  * Owns the lightweight-charts instance lifecycle: creation, theming,
- * resize-observing, and crosshair-driven OHLC hover state. Recreates the
- * chart whenever the theme flips (colors can't be swapped on the fly for
- * every option, so a clean recreate keeps things simple and correct).
+ * resize-observing, and crosshair-driven OHLC hover state.
  */
 export function useLightweightChart({ isDark, pricePrecision = 5 }: UseLightweightChartArgs) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -133,8 +175,6 @@ export function useLightweightChart({ isDark, pricePrecision = 5 }: UseLightweig
       borderVisible: false,
       wickUpColor: "#089981",
       wickDownColor: "#f23645",
-      // Lightweight Charts defaults to two decimal places. That makes FX
-      // quotes such as 1.34778 appear as 1.35 on the right price scale.
       priceFormat: { type: "price", precision, minMove: 10 ** -precision },
     });
 
@@ -176,9 +216,6 @@ export function useLightweightChart({ isDark, pricePrecision = 5 }: UseLightweig
     };
   }, [isDark]);
 
-  // Symbols can arrive after the chart itself (the MT5 symbols list is sent
-  // over WebSocket). Update only the formatter; do not recreate or refit the
-  // chart, because that would interrupt a user's current view.
   useEffect(() => {
     const precision = Math.max(0, Math.min(10, Math.floor(pricePrecision)));
     candleSeriesRef.current?.applyOptions({
@@ -201,25 +238,19 @@ interface UseMarketSocketArgs {
 }
 
 /**
- * Owns the WebSocket connection to the MT5 bridge: connecting, subscribing,
- * parsing incoming snapshot/update/status messages, and auto-reconnecting
- * with backoff on close/error. Also mirrors incoming candles into the
- * lightweight-charts series directly for minimal-latency updates.
+ * Connects to live candle stream using LiveCandleStream and updates
+ * the lightweight-charts series with live candles.
  */
 export function useMarketSocket({
-  clientId,
   symbol,
   timeframe,
   candleSeriesRef,
   chartRef,
   hasFittedInitialSnapshot,
-  setSymbolsList,
-  setSymbol,
 }: UseMarketSocketArgs) {
-  const wsRef = useRef<WebSocket | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
-  const [wsError, setWsError] = useState<string | null>("Connecting to MT5 Python Bridge...");
-  const [brokerInfo, setBrokerInfo] = useState<Record<string, unknown>>({});
+  const [wsError, setWsError] = useState<string | null>(null);
+  const [brokerInfo] = useState<Record<string, unknown>>({});
   const [candles, setCandles] = useState<CandleData[]>([]);
   const [snapshotSubscription, setSnapshotSubscription] = useState<{ symbol: string; timeframe: string } | null>(null);
   const [currentTick, setCurrentTick] = useState<TickState>({
@@ -230,187 +261,100 @@ export function useMarketSocket({
   });
 
   useEffect(() => {
-    let ws: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let isDisposed = false;
+    if (!symbol) return;
 
-    // Each symbol/timeframe has its own socket subscription. Remove all old
-    // candle state before opening it so overlays can never be paired with a
-    // stale or empty previous chart.
     setCandles([]);
     setSnapshotSubscription(null);
     hasFittedInitialSnapshot.current = false;
     candleSeriesRef.current?.setData([]);
 
-    const applySnapshot = (msg: any) => {
-      if (msg.client_id && msg.client_id !== clientId) return;
-      // A prior subscription can finish after the user selects a new pair.
-      // Never let its candles become the data source for the active chart.
-      if (msg.symbol !== symbol || msg.timeframe !== timeframe) return;
+    const tf = mapToTimeframe(timeframe);
+    const apiKey =
+      (typeof process !== "undefined" &&
+        (process.env.NEXT_PUBLIC_MT5_API_KEY || process.env.MT5_API_KEY)) ||
+      "demo_key";
+    const wsUrl =
+      (typeof process !== "undefined" &&
+        (process.env.NEXT_PUBLIC_MT5_WS_URL || process.env.MT5_WS_URL)) ||
+      (typeof window !== "undefined"
+        ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.hostname}:8001`
+        : "ws://localhost:8001");
 
-      setCandles(msg.data);
-      setSnapshotSubscription({ symbol, timeframe });
-      setWsError(null);
-
-      if (candleSeriesRef.current && msg.data.length > 0) {
-        const formatted: CandlestickData<Time>[] = msg.data.map((c: CandleData) => ({
-          time: c.time as Time,
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-        }));
-        candleSeriesRef.current.setData(formatted);
-
-        if (!hasFittedInitialSnapshot.current) {
-          chartRef.current?.timeScale().fitContent();
-          hasFittedInitialSnapshot.current = true;
-        }
-      }
-
-      if (msg.data.length > 0) {
-        const last = msg.data[msg.data.length - 1];
-        const first = msg.data[0];
-        const change = last.close - first.open;
-        const changePercent = first.open > 0 ? (change / first.open) * 100 : 0;
-        setCurrentTick({ price: last.close, time: last.time, change, changePercent });
-      }
-    };
-
-    const applyCandleUpdate = (msg: any) => {
-      if (msg.symbol !== symbol || msg.timeframe !== timeframe) return;
-
-      const updated: CandleData = msg.candle;
-
-      if (candleSeriesRef.current) {
-        candleSeriesRef.current.update({
-          time: updated.time as Time,
-          open: updated.open,
-          high: updated.high,
-          low: updated.low,
-          close: updated.close,
-        });
-      }
-
-      setCandles((prev) => {
-        if (prev.length === 0) return [updated];
-        const last = prev[prev.length - 1];
-        if (last.time === updated.time) {
-          const next = [...prev];
-          next[next.length - 1] = updated;
-          return next;
-        }
-        if (updated.time > last.time) {
-          // Keep the same history depth as the server snapshot. Pine pivots,
-          // ATR and request.security all depend on bars before the viewport.
-          return [...prev.slice(-9999), updated];
-        }
-        return prev;
-      });
-
-      if (msg.tick) {
-        setCurrentTick((prev) => ({
-          price: msg.tick.price || updated.close,
-          time: msg.tick.time || updated.time,
-          change: updated.close - (prev.price || updated.close),
-          changePercent: prev.price > 0 ? ((updated.close - prev.price) / prev.price) * 100 : 0,
-        }));
-      }
-    };
-
-    const handleMessage = (event: MessageEvent) => {
-      if (isDisposed) return;
-      try {
-        const msg = JSON.parse(event.data);
-
-        switch (msg.type) {
-          case "broker_status":
-            setBrokerInfo(msg.broker || {});
-            setWsError(msg.connected ? null : msg.error || "Awaiting connection to MT5 RPC bridge...");
-            break;
-
-          case "symbols_list":
-            if (Array.isArray(msg.data) && msg.data.length > 0) {
-              setSymbolsList(msg.data);
-              setSymbol((prev) => {
-                if (prev && msg.data.some((s: SymbolInfo) => s.symbol === prev)) return prev;
-                if (msg.data.some((s: SymbolInfo) => s.symbol === "EURUSD")) return "EURUSD";
-                return msg.data[0]?.symbol || "";
-              });
-              setWsError(null);
-            }
-            break;
-
-          case "snapshot":
-            if (Array.isArray(msg.data)) applySnapshot(msg);
-            break;
-
-          case "candle_update":
-            if (msg.candle) applyCandleUpdate(msg);
-            break;
-
-          default:
-            break;
-        }
-      } catch (e) {
-        console.error("WS Parse error:", e);
-      }
-    };
-
-    const connect = () => {
-      if (isDisposed) return;
-
-      let wsUrl = "";
-      try {
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        wsUrl = `${protocol}//${window.location.hostname}/ws`;
-
-        ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-
-        ws.onopen = () => {
-          if (isDisposed) return;
+    const stream = new LiveCandleStream({
+      apiKey,
+      symbol,
+      timeframe: tf,
+      url: wsUrl,
+      callbacks: {
+        onOpen() {
+          console.log(`[LiveCandleStream] Connected: ${symbol} ${tf}`);
           setWsConnected(true);
           setWsError(null);
-          ws?.send(JSON.stringify({ type: "get_symbols", client_id: clientId }));
-          if (symbol) {
-            ws?.send(JSON.stringify({ type: "subscribe", client_id: clientId, symbol, timeframe }));
+          setSnapshotSubscription({ symbol, timeframe });
+        },
+        onCandle(candle: Candle) {
+          candleSeriesRef.current?.update({
+            time: candle.time as Time,
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+          });
+
+          setCandles((prev) => {
+            if (prev.length === 0) return [candle];
+            const last = prev[prev.length - 1];
+            if (last.time === candle.time) {
+              const next = [...prev];
+              next[next.length - 1] = candle;
+              return next;
+            }
+            if (candle.time > last.time) {
+              return [...prev.slice(-9999), candle];
+            }
+            return prev;
+          });
+
+          if (!hasFittedInitialSnapshot.current) {
+            chartRef.current?.timeScale().fitContent();
+            hasFittedInitialSnapshot.current = true;
           }
-        };
 
-        ws.onmessage = handleMessage;
-
-        ws.onerror = (error) => {
-          // console.error("WebSocket error:", error);
+          setCurrentTick((prev) => ({
+            price: candle.close,
+            time: candle.time,
+            change: prev.price > 0 ? candle.close - prev.price : 0,
+            changePercent: prev.price > 0 ? ((candle.close - prev.price) / prev.price) * 100 : 0,
+          }));
+        },
+        onComplete(candle: Candle) {
+          candleSeriesRef.current?.update({
+            time: candle.time as Time,
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+          });
+        },
+        onError(error: Error) {
+          console.error("[LiveCandleStream] Error:", error);
           setWsConnected(false);
-          setWsError(`Cannot connect to WebSocket at ${wsUrl}`);
-        };
-
-        ws.onclose = (event) => {
-          console.warn("WebSocket closed:", event.code, event.reason);
+          setWsError(error.message || "Live candle stream error");
+        },
+        onClose() {
+          console.log("[LiveCandleStream] Closed");
           setWsConnected(false);
-          if (!isDisposed) reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
-        };
-      } catch (error) {
-        console.error("WebSocket connection error:", error);
-        setWsConnected(false);
-        setWsError(`Cannot connect to WebSocket at ${wsUrl}`);
-        if (!isDisposed) reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
-      }
-    };
+        },
+      },
+    });
 
-    connect();
+    stream.connect();
 
     return () => {
-      isDisposed = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
+      stream.close();
+      setWsConnected(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, symbol, timeframe]);
+  }, [symbol, timeframe, candleSeriesRef, chartRef, hasFittedInitialSnapshot]);
 
   return { wsConnected, wsError, brokerInfo, candles, currentTick, snapshotSubscription };
 }
