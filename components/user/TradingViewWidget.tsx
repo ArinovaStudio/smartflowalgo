@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import LightweightChartWidget, { IndicatorMeta } from "./LightweightChartWidget";
 
 interface TradingViewWidgetProps {
@@ -21,7 +21,7 @@ export default function TradingViewWidget({
       <LightweightChartWidget
         initialSymbol={symbol.replace("FX:", "")}
         initialTimeframe={interval === "1" ? "1m" : interval}
-        theme="light"
+        theme={theme}
         activeIndicators={activeIndicators}
       />
     </div>

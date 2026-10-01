@@ -140,7 +140,10 @@ export async function POST(
                     // Send recent historical candles for this symbol and timeframe if available
                     try {
                         const httpUrl = baseUrl.replace(/^ws:\/\//, "http://").replace(/^wss:\/\//, "https://");
-                        const ratesUrl = `${httpUrl}/rates/${encodeURIComponent(symbol)}?timeframe=${encodeURIComponent(timeframe)}&count=100`;
+                        // Pine indicators often request previous-day/session
+                        // levels. 100 bars is less than one trading day on M1
+                        // and leaves request.security() without prior periods.
+                        const ratesUrl = `${httpUrl}/rates/${encodeURIComponent(symbol)}?timeframe=${encodeURIComponent(timeframe)}&count=1500`;
                         const res = await fetch(ratesUrl, {
                             headers: { "X-API-Key": apiKey },
                             cache: "no-store",
@@ -165,6 +168,14 @@ export async function POST(
                         }
                     } catch {
                         // Live ticks will continue
+                    }
+
+                    // Let chart providers know the complete historical batch
+                    // has been sent before they return the initial snapshot.
+                    try {
+                        controller.enqueue(encoder.encode("event: history_end\ndata: {}\n\n"));
+                    } catch {
+                        socket?.close();
                     }
                 };
 
