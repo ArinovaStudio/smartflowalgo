@@ -4,19 +4,19 @@ services:
   # ==========================================
   # 1. MetaTrader 5 Container
   # ==========================================
-  metatrader5:
-    image: gmag11/metatrader5_vnc:latest
-    container_name: mt5_server
-    restart: unless-stopped
-    ports:
-      - "3002:3000"   # noVNC Web Interface
-      - "8002:8001"   # MT5 API / WebSocket Port
-    environment:
-      - CUSTOM_USER=admin
-      - PASSWORD=YourSecurePassword123
-    volumes:
-      - mt5_data:/config
-      - ./custom-init/00-fix-mt5linux.sh:/custom-cont-init.d/00-fix-mt5linux.sh
+  # metatrader5:
+  #   image: gmag11/metatrader5_vnc:latest
+  #   container_name: mt5_server
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3002:3000"   # noVNC Web Interface
+  #     - "8002:8001"   # MT5 API / WebSocket Port
+  #   environment:
+  #     - CUSTOM_USER=admin
+  #     - PASSWORD=YourSecurePassword123
+  #   volumes:
+  #     - mt5_data:/config
+  #     - ./custom-init/00-fix-mt5linux.sh:/custom-cont-init.d/00-fix-mt5linux.sh
 
   # ==========================================
   # 2. SmartFlowAlgo Next.js Frontend
@@ -33,8 +33,6 @@ services:
       - .env
     environment:
       - NODE_OPTIONS=--no-network-family-autoselection
-    depends_on:
-      - metatrader5
 
 volumes:
   mt5_data:
