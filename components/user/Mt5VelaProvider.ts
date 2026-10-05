@@ -23,12 +23,18 @@ function mt5Timeframe(timeframe: string): string {
   const upper = tf.toUpperCase();
   const mt5 = /^(MN|M|H|D|W)(\d+)$/i.exec(upper);
   if (mt5) return `${mt5[1].toUpperCase()}${mt5[2]}`;
-  if (/^\d+$/.test(tf)) return `M${tf}`;
+
+  if (/^\d+$/.test(tf)) {
+    const n = Number(tf);
+    const HOUR_MINUTES: Record<number, number> = { 60: 1, 120: 2, 180: 3, 240: 4, 360: 6, 480: 8, 720: 12 };
+    if (HOUR_MINUTES[n]) return `H${HOUR_MINUTES[n]}`;
+    return `M${tf}`;
+  }
+
   const pine = /^(\d+)([mMHDW])$/.exec(tf);
   if (pine) {
     const n = Number(pine[1]);
     switch (pine[2].toUpperCase()) {
-      // Pine's lowercase `m` is minutes; uppercase `M` is months.
       case "M": return pine[2] === "m" ? `M${n}` : `MN${n}`;
       case "H": return `H${n}`;
       case "D": return `D${n}`;
@@ -45,6 +51,14 @@ function normalizeTime(value: unknown): number {
   const time = Number(value);
   if (!Number.isFinite(time) || time <= 0) return Date.now();
   return Math.floor(time < 1e12 ? time * 1000 : time);
+}
+
+function intradayIntervalMs(timeframe: string): number | null {
+  const tf = String(timeframe || "").trim().toUpperCase();
+  const mt5 = /^(M|H)(\d+)$/.exec(tf);
+  if (mt5) return Number(mt5[2]) * (mt5[1] === "H" ? 3_600_000 : 60_000);
+  const pineMinutes = /^(\d+)$/.exec(tf);
+  return pineMinutes ? Number(pineMinutes[1]) * 60_000 : null;
 }
 
 function rangeBars(bars: Iterable<OHLCV>, range: BarRange = {}): OHLCV[] {
@@ -66,6 +80,7 @@ class SharedMt5Stream {
   private closed = false;
   private settled = false;
   private newestTime = 0;
+  private timestampOffsetMs = 0;
   private controller: AbortController | null = null;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private maxTimer: ReturnType<typeof setTimeout> | null = null;
@@ -187,7 +202,37 @@ class SharedMt5Stream {
         console.error("[MT5 Vela] Could not parse candle frame:", error);
       }
     }
-    if (eventName === "history_end") this.markReady();
+    if (eventName === "history_end") {
+      this.alignHistoryClock();
+      this.markReady();
+    }
+  }
+
+  /**
+   * Some MT5 bridges serialize broker-local timestamps as if they were UTC.
+   * Vela uses epoch time to compute the bar-close countdown, so a consistent
+   * broker offset otherwise appears as several hours remaining on every bar.
+   * Infer only quarter-hour offsets when the newest history bar is current;
+   * old market data and ordinary gaps are left untouched.
+   */
+  private alignHistoryClock(): void {
+    const interval = intradayIntervalMs(this.timeframe);
+    if (!interval || this.bars.size === 0) return;
+    const latest = this.last();
+    if (!latest) return;
+    const now = Date.now();
+    const currentBarOpen = Math.floor(now / interval) * interval;
+    const skew = latest.time - currentBarOpen;
+    const quarterHour = 15 * 60_000;
+    const offset = Math.round(skew / quarterHour) * quarterHour;
+    const residual = Math.abs(skew - offset);
+    if (Math.abs(offset) < 2 * interval || Math.abs(offset) > 14 * 60 * 60_000 || residual > Math.max(2_000, interval / 4)) return;
+
+    this.timestampOffsetMs = offset;
+    const shifted = Array.from(this.bars.values(), (bar) => ({ ...bar, time: bar.time - offset }));
+    this.bars.clear();
+    for (const bar of shifted) this.bars.set(bar.time, bar);
+    this.newestTime -= offset;
   }
 
   private ingest(raw: any): void {
@@ -196,7 +241,7 @@ class SharedMt5Stream {
     const low = Number(raw?.low);
     const close = Number(raw?.close);
     if (![open, high, low, close].every(Number.isFinite) || open <= 0) return;
-    const time = normalizeTime(raw?.time ?? raw?.openTime);
+    const time = normalizeTime(raw?.time ?? raw?.openTime) - this.timestampOffsetMs;
     const bar: OHLCV = { time, open, high, low, close, volume: Number(raw?.volume ?? raw?.tick_volume ?? 0) };
     this.bars.set(time, bar);
     const isTail = time >= this.newestTime;

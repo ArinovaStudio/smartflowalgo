@@ -12,7 +12,7 @@ interface TradingViewWidgetProps {
 
 export default function TradingViewWidget({
   symbol = "XAUUSD",
-  interval = "1m",
+  interval = "1",
   theme = "dark",
   activeIndicators = [],
 }: TradingViewWidgetProps) {

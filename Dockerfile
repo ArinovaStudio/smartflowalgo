@@ -27,14 +27,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Copy the root .env so Next.js build can read DATABASE_URL,
-# NEXTAUTH_SECRET, and all other variables at build time
-COPY .env .env
-
-# Generate Prisma Client (needs DATABASE_URL from .env)
+# Generate Prisma Client. Runtime connection settings are supplied by Compose.
 RUN npx prisma generate
 
-# Build Next.js app (reads .env for NEXT_PUBLIC_* vars etc.)
+# Build the app without embedding deployment-specific public WebSocket URLs.
 RUN npm run build
 
 # ==========================================
@@ -58,17 +54,13 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 
-# Copy .env so runtime env vars (PORT, DATABASE_URL, etc.) are available
-COPY --from=builder /app/.env .env
-
 # Fix ownership so the non-root 'nextjs' user can write to .next/cache
 # (Next.js needs write access here for image optimization, ISR, etc.)
 RUN chown -R nextjs:nodejs /app
 
 USER nextjs
 
-# PORT is read from .env at runtime; docker-compose maps it dynamically.
-# Expose the default 3000; actual port override comes from .env / env_file.
+# Compose supplies runtime settings and maps the configured host port to 9086.
 EXPOSE 3000
 
 CMD ["npm", "start"]

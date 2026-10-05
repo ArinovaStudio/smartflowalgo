@@ -28,11 +28,16 @@ services:
     container_name: smartflowalgo-frontend
     restart: unless-stopped
     ports:
-      - "${PORT:-3000}:9086"
+      - "${PORT:-9086}:9086"
     env_file:
       - .env
     environment:
+      - PORT=9086
       - NODE_OPTIONS=--no-network-family-autoselection
+      # The chart connects to this endpoint from inside the frontend container.
+      # Set it to the address of the existing MT5 service reachable on this host/network.
+      - MT5_WS_URL=${MT5_WS_URL:-ws://host.docker.internal:8001}
+      - MT5_API_KEY=${MT5_API_KEY:-demo_key}
 
 volumes:
   mt5_data:

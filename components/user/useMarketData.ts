@@ -278,7 +278,7 @@ export function useMarketSocket({
         (process.env.NEXT_PUBLIC_MT5_WS_URL || process.env.MT5_WS_URL)) ||
       (typeof window !== "undefined"
         ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.hostname}:8001`
-        : "ws://localhost:8001");
+        : "ws://host.docker.internal:8001");
 
     const stream = new LiveCandleStream({
       apiKey,

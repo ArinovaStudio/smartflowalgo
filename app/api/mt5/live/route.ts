@@ -112,7 +112,7 @@ export async function POST(
 
         const baseUrl =
             process.env.MT5_WS_URL ||
-            "ws://127.0.0.1:8001";
+            "ws://host.docker.internal:8001";
 
         const wsUrl =
             `${baseUrl}/ws/ticks` +
@@ -152,10 +152,11 @@ export async function POST(
                         if (res.ok) {
                             const data = await res.json();
                             const list = Array.isArray(data) ? data : (Array.isArray(data?.rates) ? data.rates : []);
+                            let latestHistorical: Candle | null = null;
                             for (const item of list) {
                                 const rawT = typeof item.time === "number" ? item.time : Math.floor(new Date(item.time).getTime() / 1000);
                                 const alignedT = Math.floor(normalizeTickTime(rawT) / timeframeSeconds) * timeframeSeconds;
-                                sendCandle(controller, encoder, {
+                                const historical: Candle = {
                                     time: alignedT,
                                     open: Number(item.open),
                                     high: Number(item.high),
@@ -163,7 +164,23 @@ export async function POST(
                                     close: Number(item.close),
                                     volume: Number(item.volume || item.tick_volume || 0),
                                     complete: true,
+                                };
+                                if (
+                                    Number.isFinite(historical.time) && historical.time > 0 &&
+                                    [historical.open, historical.high, historical.low, historical.close].every(Number.isFinite) &&
+                                    (!latestHistorical || historical.time > latestHistorical.time)
+                                ) {
+                                    latestHistorical = historical;
+                                }
+                                sendCandle(controller, encoder, {
+                                    ...historical,
                                 });
+                            }
+                            // Carry the latest server candle into the live stream.
+                            // The first tick in this timeframe must update its OHLC,
+                            // not create a new candle whose open is the tick price.
+                            if (latestHistorical) {
+                                currentCandle = { ...latestHistorical, complete: false };
                             }
                         }
                     } catch {
@@ -235,6 +252,10 @@ export async function POST(
                                 timeframeSeconds
                             ) *
                             timeframeSeconds;
+
+                        // Delayed/out-of-order ticks must not mutate the newer
+                        // forming candle after a history/live reconnect.
+                        if (currentCandle && candleTime < currentCandle.time) return;
 
                         /*
                          * FIRST CANDLE
