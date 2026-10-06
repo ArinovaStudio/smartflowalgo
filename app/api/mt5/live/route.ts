@@ -1,442 +1,145 @@
-import { NextRequest } from "next/server";
+/**
+ * app/api/mt5/live/route.ts
+ *
+ * POST /api/mt5/live   body: { "symbol": "EURUSD" }      (GET ?symbol= also works)
+ *
+ * Relays MT5 ticks for ONE symbol as Server-Sent Events:
+ *
+ *   event: ready                      <- MT5 socket is open (also sent after every reconnect)
+ *   data: {"t":1735689600123,"p":1.0421,"v":0}     t = ms, p = price (bid), v = tick volume
+ *   : ping                            <- heartbeat comment every 15 s
+ *
+ * This route deliberately does NOT build candles. The browser provider already
+ * holds the real MT5 history bar, so it can continue the forming candle from it
+ * instead of restarting it from the first tick it happens to see, and it can
+ * build any timeframe (including resampled ones) from one stream per symbol.
+ */
+import { cleanSymbol, errorResponse, getEnv, HttpError, resolveBrokerSymbol } from "../mt5-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Timeframe =
-    | "M1"
-    | "M2"
-    | "M3"
-    | "M4"
-    | "M5"
-    | "M6"
-    | "M10"
-    | "M12"
-    | "M15"
-    | "M20"
-    | "M30"
-    | "H1"
-    | "H2"
-    | "H3"
-    | "H4"
-    | "H6"
-    | "H8"
-    | "H12"
-    | "D1"
-    | "W1"
-    | "MN1";
+const OPEN_TIMEOUT_MS = 10_000;
+const HEARTBEAT_MS = 15_000;
 
-interface LiveTick {
-    symbol: string;
-    time: number;
-    bid: number;
-    ask: number;
-    last?: number;
-    volume?: number;
-}
-
-interface Candle {
-    time: number;
-    open: number;
-    high: number;
-    low: number;
-    close: number;
-    volume: number;
-    complete: boolean;
-}
-
-function timeframeToSeconds(timeframe: string): number {
-    const tf = (timeframe || "M1").toUpperCase().trim();
-    if (tf === "MN1" || tf === "1MN") return 30 * 24 * 60 * 60;
-    if (tf === "W1" || tf === "1W") return 7 * 24 * 60 * 60;
-    if (tf === "D1" || tf === "1D") return 24 * 60 * 60;
-
-    if (tf.startsWith("M")) {
-        const mins = parseInt(tf.slice(1), 10);
-        return (!isNaN(mins) && mins > 0 ? mins : 1) * 60;
-    }
-    if (tf.endsWith("M")) {
-        const mins = parseInt(tf.slice(0, -1), 10);
-        return (!isNaN(mins) && mins > 0 ? mins : 1) * 60;
-    }
-
-    if (tf.startsWith("H")) {
-        const hours = parseInt(tf.slice(1), 10);
-        return (!isNaN(hours) && hours > 0 ? hours : 1) * 3600;
-    }
-    if (tf.endsWith("H")) {
-        const hours = parseInt(tf.slice(0, -1), 10);
-        return (!isNaN(hours) && hours > 0 ? hours : 1) * 3600;
-    }
-
-    return 60;
-}
-
-function normalizeTickTime(time: any): number {
-    if (typeof time === "number" && !isNaN(time) && time > 0) {
-        // MT5 returned milliseconds
-        if (time > 1_000_000_000_000) {
-            return Math.floor(time / 1000);
-        }
-        return Math.floor(time);
-    }
-    return Math.floor(Date.now() / 1000);
-}
-
-export async function POST(
-    request: NextRequest
-) {
+export async function POST(request: Request) {
+    let symbol = "";
     try {
-        const body = await request.json();
+        const body = (await request.json()) as { symbol?: unknown } | null;
+        symbol = cleanSymbol(body?.symbol);
+    } catch {
+        /* fall through to the validation below */
+    }
+    return stream(request, symbol);
+}
 
-        const symbol: string =
-            body.symbol || "EURUSD";
+export async function GET(request: Request) {
+    return stream(request, cleanSymbol(new URL(request.url).searchParams.get("symbol")));
+}
 
-        const timeframe: Timeframe =
-            body.timeframe || "M1";
-
-        const apiKey =
-            process.env.MT5_API_KEY;
-
-        if (!apiKey) {
-            return Response.json(
-                {
-                    error: "MT5_API_KEY is missing",
-                },
-                { status: 500 }
-            );
+async function stream(request: Request, symbol: string): Promise<Response> {
+    try {
+        if (!symbol) throw new HttpError(400, "symbol is required");
+        const env = getEnv();
+        if (typeof WebSocket === "undefined") {
+            throw new HttpError(500, "Global WebSocket is unavailable. Use Node 22+ or polyfill it with the 'ws' package.");
         }
 
-        const timeframeSeconds =
-            timeframeToSeconds(timeframe);
-
-        const baseUrl =
-            process.env.MT5_WS_URL ||
-            "ws://host.docker.internal:8001";
-
+        const broker = await resolveBrokerSymbol(env, symbol);
         const wsUrl =
-            `${baseUrl}/ws/ticks` +
-            `?symbols=${encodeURIComponent(symbol)}` +
-            `&api_key=${encodeURIComponent(apiKey)}`;
-
-        console.log(
-            `[MT5] Starting stream ${symbol} ${timeframe}`
-        );
+            `${env.wsBase}/ws/ticks?symbols=${encodeURIComponent(broker)}` +
+            `&api_key=${encodeURIComponent(env.apiKey)}`;
 
         const encoder = new TextEncoder();
-
+        let closed = false;
         let socket: WebSocket | null = null;
-        let currentCandle: Candle | null = null;
+        let heartbeat: ReturnType<typeof setInterval> | null = null;
+        let openTimer: ReturnType<typeof setTimeout> | null = null;
+        let ctl: ReadableStreamDefaultController<Uint8Array> | null = null;
 
-        const stream = new ReadableStream({
+        const shutdown = () => {
+            if (closed) return;
+            closed = true;
+            if (heartbeat) clearInterval(heartbeat);
+            if (openTimer) clearTimeout(openTimer);
+            try { socket?.close(); } catch { /* already closed */ }
+            try { ctl?.close(); } catch { /* already closed */ }
+        };
+
+        const send = (text: string) => {
+            if (closed || !ctl) return;
+            try {
+                ctl.enqueue(encoder.encode(text));
+            } catch {
+                shutdown();
+            }
+        };
+
+        const body = new ReadableStream<Uint8Array>({
             start(controller) {
+                ctl = controller;
+                console.log(`[MT5] live stream ${symbol}${broker !== symbol ? ` -> ${broker}` : ""}`);
+
                 socket = new WebSocket(wsUrl);
 
-                socket.onopen = async () => {
-                    console.log(
-                        `[MT5] Connected ${symbol} ${timeframe}`
-                    );
+                openTimer = setTimeout(() => {
+                    send(`event: error\ndata: ${JSON.stringify({ message: "MT5 tick socket did not open in time" })}\n\n`);
+                    shutdown();
+                }, OPEN_TIMEOUT_MS);
 
-                    // Send recent historical candles for this symbol and timeframe if available
-                    try {
-                        const httpUrl = baseUrl.replace(/^ws:\/\//, "http://").replace(/^wss:\/\//, "https://");
-                        // Pine indicators often request previous-day/session
-                        // levels. 100 bars is less than one trading day on M1
-                        // and leaves request.security() without prior periods.
-                        const ratesUrl = `${httpUrl}/rates/${encodeURIComponent(symbol)}?timeframe=${encodeURIComponent(timeframe)}&count=1500`;
-                        const res = await fetch(ratesUrl, {
-                            headers: { "X-API-Key": apiKey },
-                            cache: "no-store",
-                            signal: AbortSignal.timeout(3000),
-                        });
-                        if (res.ok) {
-                            const data = await res.json();
-                            const list = Array.isArray(data) ? data : (Array.isArray(data?.rates) ? data.rates : []);
-                            let latestHistorical: Candle | null = null;
-                            for (const item of list) {
-                                const rawT = typeof item.time === "number" ? item.time : Math.floor(new Date(item.time).getTime() / 1000);
-                                const alignedT = Math.floor(normalizeTickTime(rawT) / timeframeSeconds) * timeframeSeconds;
-                                const historical: Candle = {
-                                    time: alignedT,
-                                    open: Number(item.open),
-                                    high: Number(item.high),
-                                    low: Number(item.low),
-                                    close: Number(item.close),
-                                    volume: Number(item.volume || item.tick_volume || 0),
-                                    complete: true,
-                                };
-                                if (
-                                    Number.isFinite(historical.time) && historical.time > 0 &&
-                                    [historical.open, historical.high, historical.low, historical.close].every(Number.isFinite) &&
-                                    (!latestHistorical || historical.time > latestHistorical.time)
-                                ) {
-                                    latestHistorical = historical;
-                                }
-                                sendCandle(controller, encoder, {
-                                    ...historical,
-                                });
-                            }
-                            // Carry the latest server candle into the live stream.
-                            // The first tick in this timeframe must update its OHLC,
-                            // not create a new candle whose open is the tick price.
-                            if (latestHistorical) {
-                                currentCandle = { ...latestHistorical, complete: false };
-                            }
-                        }
-                    } catch {
-                        // Live ticks will continue
-                    }
-
-                    // Let chart providers know the complete historical batch
-                    // has been sent before they return the initial snapshot.
-                    try {
-                        controller.enqueue(encoder.encode("event: history_end\ndata: {}\n\n"));
-                    } catch {
-                        socket?.close();
-                    }
+                socket.onopen = () => {
+                    if (openTimer) clearTimeout(openTimer);
+                    openTimer = null;
+                    send(`event: ready\ndata: ${JSON.stringify({ symbol: broker })}\n\n`);
+                    heartbeat = setInterval(() => send(": ping\n\n"), HEARTBEAT_MS);
                 };
 
                 socket.onmessage = (event) => {
+                    const raw = typeof event.data === "string" ? event.data : new TextDecoder().decode(event.data as ArrayBuffer);
+                    let tick: Record<string, unknown>;
                     try {
-                        const tick =
-                            JSON.parse(
-                                event.data.toString()
-                            ) as LiveTick;
-
-                        if (
-                            !tick ||
-                            !tick.symbol ||
-                            tick.symbol.toUpperCase() !== symbol.toUpperCase()
-                        ) {
-                            return;
-                        }
-
-                        const price =
-                            typeof tick.bid === "number" && Number.isFinite(tick.bid)
-                                ? tick.bid
-                                : typeof tick.last === "number" && Number.isFinite(tick.last)
-                                ? tick.last
-                                : typeof tick.ask === "number" && Number.isFinite(tick.ask)
-                                ? tick.ask
-                                : null;
-
-                        if (
-                            price === null
-                        ) {
-                            return;
-                        }
-
-                        /*
-                         * IMPORTANT:
-                         * Convert MT5 timestamp to seconds.
-                         */
-                        const tickTime =
-                            normalizeTickTime(tick.time ?? (tick as any).time_msc);
-
-                        /*
-                         * Convert tick time into the
-                         * beginning of its timeframe.
-                         *
-                         * M1:
-                         * 11:24:31 -> 11:24:00
-                         *
-                         * M5:
-                         * 11:24:31 -> 11:20:00
-                         *
-                         * M15:
-                         * 11:24:31 -> 11:15:00
-                         */
-                        const candleTime =
-                            Math.floor(
-                                tickTime /
-                                timeframeSeconds
-                            ) *
-                            timeframeSeconds;
-
-                        // Delayed/out-of-order ticks must not mutate the newer
-                        // forming candle after a history/live reconnect.
-                        if (currentCandle && candleTime < currentCandle.time) return;
-
-                        /*
-                         * FIRST CANDLE
-                         */
-                        if (!currentCandle) {
-                            currentCandle = {
-                                time: candleTime,
-                                open: price,
-                                high: price,
-                                low: price,
-                                close: price,
-                                volume:
-                                    tick.volume ?? 0,
-                                complete: false,
-                            };
-
-                            sendCandle(
-                                controller,
-                                encoder,
-                                currentCandle
-                            );
-
-                            return;
-                        }
-
-                        /*
-                         * NEW CANDLE
-                         *
-                         * This only happens when the
-                         * timeframe boundary changes.
-                         */
-                        if (
-                            candleTime >
-                            currentCandle.time
-                        ) {
-                            /*
-                             * Close previous candle
-                             */
-                            const completedCandle: Candle = {
-                                ...currentCandle,
-                                complete: true,
-                            };
-
-                            sendCandle(
-                                controller,
-                                encoder,
-                                completedCandle
-                            );
-
-                            /*
-                             * Create new candle
-                             */
-                            currentCandle = {
-                                time: candleTime,
-                                open: price,
-                                high: price,
-                                low: price,
-                                close: price,
-                                volume:
-                                    tick.volume ?? 0,
-                                complete: false,
-                            };
-
-                            sendCandle(
-                                controller,
-                                encoder,
-                                currentCandle
-                            );
-
-                            return;
-                        }
-
-                        /*
-                         * SAME CANDLE
-                         *
-                         * Every tick inside the timeframe
-                         * updates this candle.
-                         */
-                        currentCandle.high =
-                            Math.max(
-                                currentCandle.high,
-                                price
-                            );
-
-                        currentCandle.low =
-                            Math.min(
-                                currentCandle.low,
-                                price
-                            );
-
-                        currentCandle.close =
-                            price;
-
-                        currentCandle.volume +=
-                            tick.volume ?? 0;
-
-                        /*
-                         * Send updated candle
-                         */
-                        sendCandle(
-                            controller,
-                            encoder,
-                            currentCandle
-                        );
-                    } catch (error) {
-                        console.error(
-                            "[MT5] Tick processing error:",
-                            error
-                        );
+                        tick = JSON.parse(raw) as Record<string, unknown>;
+                    } catch {
+                        return;
                     }
+                    if (!tick || String(tick.symbol ?? "").toUpperCase() !== broker.toUpperCase()) return;
+
+                    const bid = Number(tick.bid);
+                    const last = Number(tick.last);
+                    const ask = Number(tick.ask);
+                    const price = bid > 0 ? bid : last > 0 ? last : ask > 0 ? ask : null;
+                    if (price === null) return;
+
+                    const rawTime = Number(tick.time_msc ?? tick.time);
+                    const t = Number.isFinite(rawTime) && rawTime > 0 ? (rawTime < 1e12 ? rawTime * 1000 : rawTime) : Date.now();
+                    const volume = Number(tick.volume);
+                    send(`data: ${JSON.stringify({ t, p: price, v: Number.isFinite(volume) && volume > 0 ? volume : 0 })}\n\n`);
                 };
 
-                socket.onerror = (error) => {
-                    console.error(
-                        "[MT5] WebSocket error:",
-                        error
-                    );
-
-                    try {
-                        controller.close();
-                    } catch { }
+                socket.onerror = () => {
+                    console.error(`[MT5] tick socket error for ${broker}`);
+                    send(`event: error\ndata: ${JSON.stringify({ message: "MT5 tick socket error" })}\n\n`);
+                    shutdown();
                 };
 
-                socket.onclose = () => {
-                    console.log(
-                        `[MT5] WebSocket closed ${symbol}`
-                    );
-
-                    try {
-                        controller.close();
-                    } catch { }
-                };
+                socket.onclose = () => shutdown();
             },
-
             cancel() {
-                console.log(
-                    `[MT5] Client disconnected ${symbol}`
-                );
-
-                if (socket) {
-                    socket.close();
-                    socket = null;
-                }
+                shutdown();
             },
         });
 
-        return new Response(stream, {
+        request.signal.addEventListener("abort", shutdown, { once: true });
+
+        return new Response(body, {
             headers: {
-                "Content-Type":
-                    "text/event-stream",
-                "Cache-Control":
-                    "no-cache, no-transform",
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache, no-transform",
                 Connection: "keep-alive",
                 "X-Accel-Buffering": "no",
             },
         });
-    } catch (error: any) {
-        console.error(
-            "[MT5] Live candle error:",
-            error
-        );
-
-        return Response.json(
-            {
-                error:
-                    error?.message ||
-                    "Failed to connect to MT5",
-            },
-            { status: 500 }
-        );
+    } catch (error) {
+        return errorResponse(error);
     }
-}
-
-function sendCandle(
-    controller: ReadableStreamDefaultController,
-    encoder: TextEncoder,
-    candle: Candle
-) {
-    controller.enqueue(
-        encoder.encode(
-            `data: ${JSON.stringify(candle)}\n\n`
-        )
-    );
 }

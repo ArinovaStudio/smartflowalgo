@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
-import { Mt5VelaProvider } from "./Mt5VelaProvider";
+import { MT5_ALIAS_PREFIXES, Mt5VelaProvider } from "./Mt5VelaProvider";
+import { toVelaTimeframe } from "./Mt5timeframes";
 import type { LightweightChartWidgetProps } from "./types";
-import { registerRendererDefaults } from "@luxalgo/vela/plugin";
 
 export type { DrawingItem, IndicatorMeta } from "./types";
 
@@ -15,29 +15,9 @@ type IndicatorState = {
 };
 
 type ActiveIndicator = { key: string; name: string; source: string };
-type PineTableState = { ownerId: string; table: any };
 
-/** Pine tables are screen-fixed HUDs. Keep them above the price series so
- * candles cannot paint through dashboards such as the pattern backtest table. */
-function createPineEngineWithFrontTables(
-  PineEngine: new () => any,
-  onTables: (ownerId: string, tables: any[]) => void,
-): any {
-  const engine = new PineEngine();
-  return {
-    language: engine.language,
-    capabilities: engine.capabilities,
-    prepare: (source: string, instanceId: string) => engine.prepare(source, instanceId),
-    execute: (request: any, handlers: any) => engine.execute(request, {
-      ...handlers,
-      onModel: (model: any) => {
-        onTables(model.id, model.tables ?? []);
-        // Pine tables are rendered by our interactive DOM layer below.
-        handlers.onModel({ ...model, tables: [] });
-      },
-    }),
-  };
-}
+/** How many bars the chart loads. Scripts that look back over days (e.g. backtests) are limited by this. */
+const CHART_BARS = 1500;
 
 function pineSource(entry: any): string {
   const sourceKeys = ["script", "pineSource", "pineScript", "pine", "source", "code", "content"];
@@ -64,44 +44,13 @@ function resolveIndicator(entry: any): ActiveIndicator | null {
   return { key, name, source };
 }
 
-/** Convert stored MT5/TV labels to Vela/Pine timeframe strings. */
-function toVelaTimeframe(value: string): string {
-  const tf = String(value || "1m").trim().replace(/\s+/g, "");
-  const month = /^(\d+)M$/.exec(tf);
-  if (month) {
-    const amount = Number(month[1]) || 1;
-    return amount === 1 ? "M" : `${amount}M`;
-  }
-  const mt5 = /^(MN|M|H|D|W)(\d+)$/i.exec(tf);
-  if (mt5) {
-    const amount = Number(mt5[2]) || 1;
-    switch (mt5[1].toUpperCase()) {
-      case "MN": return amount === 1 ? "M" : `${amount}M`;
-      case "M": return String(amount);
-      case "H": return String(amount * 60);
-      case "D": return amount === 1 ? "D" : `${amount}D`;
-      case "W": return amount === 1 ? "W" : `${amount}W`;
-    }
-  }
-  const pine = /^(\d+)([mhdw])$/i.exec(tf);
-  if (pine) {
-    const amount = Number(pine[1]) || 1;
-    switch (pine[2].toLowerCase()) {
-      case "m": return String(amount);
-      case "h": return String(amount * 60);
-      case "d": return amount === 1 ? "D" : `${amount}D`;
-      case "w": return amount === 1 ? "W" : `${amount}W`;
-    }
-  }
-  if (/^\d+$/.test(tf)) return tf;
-  if (/^(1?D|1?W|1?M)$/i.test(tf)) return tf.replace(/^1/, "").toUpperCase();
-  if (/^\d+(D|W|M)$/i.test(tf)) return tf.toUpperCase();
-  return "1";
+function velaSymbol(symbol: string): string {
+  const plain = String(symbol || "EURUSD").replace(/^[A-Za-z0-9_]+:/, "");
+  return `mt5:${plain}`;
 }
 
-function velaSymbol(symbol: string): string {
-  const plain = String(symbol || "EURUSD").replace(/^mt5:/i, "");
-  return `mt5:${plain}`;
+function removeHandle(handle: any) {
+  try { (handle?.remove ?? handle?.dispose)?.call(handle); } catch { /* already removed */ }
 }
 
 export default function LightweightChartWidget({
@@ -116,10 +65,14 @@ export default function LightweightChartWidget({
   const [ready, setReady] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [indicatorState, setIndicatorState] = useState<IndicatorState>({ status: "idle", name: "" });
-  const [pineTables, setPineTables] = useState<PineTableState[]>([]);
-  const [tablePositions, setTablePositions] = useState<Record<string, { left: number; top: number; width: number; height: number }>>({});
-  const [minimizedTables, setMinimizedTables] = useState<Record<string, boolean>>({});
+
   const indicatorHandlesRef = useRef(new Map<string, { source: string; handle: any }>());
+  /** key -> source currently being executed (prevents duplicate runs while one is in flight) */
+  const pendingRef = useRef(new Map<string, string>());
+  /** The indicators wanted by the latest render; async results are checked against this. */
+  const wantedRef = useRef(new Map<string, ActiveIndicator>());
+  const aliveRef = useRef(false);
+
   const symbolRef = useRef(initialSymbol);
   const timeframeRef = useRef(initialTimeframe);
   const themeRef = useRef(themeProp);
@@ -127,9 +80,22 @@ export default function LightweightChartWidget({
   timeframeRef.current = initialTimeframe;
   themeRef.current = themeProp;
 
+  // A stable string, so a parent that rebuilds the array every render does not re-run every script.
+  const indicatorSignature = useMemo(
+    () =>
+      JSON.stringify(
+        (activeIndicators as any[]).map((entry) => {
+          const resolved = resolveIndicator(entry);
+          return resolved ? [resolved.key, resolved.name, resolved.source] : [String(entry?.name ?? entry?.id ?? "?"), null];
+        }),
+      ),
+    [activeIndicators],
+  );
+
   useEffect(() => {
     if (!hostRef.current) return;
     let cancelled = false;
+    aliveRef.current = true;
     const offEvents: Array<() => void> = [];
 
     const boot = async () => {
@@ -140,39 +106,39 @@ export default function LightweightChartWidget({
         ]);
         if (cancelled || !hostRef.current) return;
 
-        const provider = new Mt5VelaProvider();
+        const provider = new Mt5VelaProvider({
+          onError: (message) => {
+            if (!cancelled) setIndicatorState({ status: "error", name: "MT5 data", message });
+          },
+        });
         providerRef.current = provider;
-const unregisterAttribution = registerRendererDefaults({
-  attribution: '<img src="/logo-removebg.png" alt="Your brand" style="height:28px;width:auto" />',
-});
+
+        // "mt5" is the real provider. The aliases let scripts use TradingView-style symbols
+        // such as TVC:DXY or OANDA:XAUUSD: they all resolve to the same MT5 data.
+        const providers: Record<string, () => unknown> = { mt5: () => provider };
+        for (const name of MT5_ALIAS_PREFIXES) providers[name] = () => provider.alias(name);
+
         const workspace = new VelaWorkspace(hostRef.current, {
           layout: false,
           symbol: velaSymbol(symbolRef.current),
           timeframe: toVelaTimeframe(timeframeRef.current),
-          bars: 1500,
+          bars: CHART_BARS,
           live: true,
           theme: themeRef.current,
           upColor: "#089981",
           downColor: "#f23645",
           currentPriceLine: true,
           defaultLanguage: "pine",
-          providers: { mt5: () => provider },
-          engines: { pine: () => createPineEngineWithFrontTables(PineEngine, (ownerId, tables) => {
-            setPineTables((current) => [
-              ...current.filter((entry) => entry.ownerId !== ownerId),
-              ...tables.map((table: any) => ({ ownerId, table })),
-            ]);
-          }) },
+          providers,
+          engines: { pine: () => new PineEngine() },
           drawings: { toolbar: true },
-          volume: false,
+          volume: true,
           topbar: { left: ["symbol", "timeframes", "style", "undo-redo"] },
           autofocus: false,
           persist: false,
         } as any);
         workspaceRef.current = workspace;
         await workspace.chart.ready();
-        console.log(workspace,"workspace");
-        
         if (cancelled) return;
 
         offEvents.push(workspace.chart.on("indicator:error", ({ error }: { error: Error }) => {
@@ -193,14 +159,11 @@ const unregisterAttribution = registerRendererDefaults({
     void boot();
     return () => {
       cancelled = true;
+      aliveRef.current = false;
       offEvents.forEach((off) => { try { off(); } catch { /* workspace already destroyed */ } });
-      for (const { handle } of indicatorHandlesRef.current.values()) {
-        try { (handle?.remove ?? handle?.dispose)?.call(handle); } catch { /* chart already destroyed */ }
-      }
+      for (const { handle } of indicatorHandlesRef.current.values()) removeHandle(handle);
       indicatorHandlesRef.current.clear();
-      setPineTables([]);
-      setTablePositions({});
-      setMinimizedTables({});
+      pendingRef.current.clear();
       try { workspaceRef.current?.destroy?.(); } catch { /* noop */ }
       providerRef.current?.dispose();
       workspaceRef.current = null;
@@ -220,8 +183,6 @@ const unregisterAttribution = registerRendererDefaults({
     if (!ready || !chart) return;
     const nextSymbol = velaSymbol(initialSymbol);
     const nextTimeframe = toVelaTimeframe(initialTimeframe);
-    console.log("Next timeframe:", nextTimeframe);
-    
     const market = chart.market ?? {};
     const sameSymbol = String(market.symbol ?? "").toLowerCase() === nextSymbol.toLowerCase();
     const sameTimeframe = String(market.timeframe ?? "") === nextTimeframe;
@@ -235,63 +196,70 @@ const unregisterAttribution = registerRendererDefaults({
   useEffect(() => {
     const chart = workspaceRef.current?.chart;
     if (!ready || !chart) return;
-    let cancelled = false;
+
     const wanted = new Map<string, ActiveIndicator>();
+    let missingSource: string | null = null;
     for (const entry of activeIndicators as any[]) {
       const resolved = resolveIndicator(entry);
       if (resolved) wanted.set(resolved.key, resolved);
-      else if (entry) {
-        setIndicatorState({ status: "error", name: entry.name || "Indicator", message: "Pine source is missing from the selected version" });
-      }
+      else if (entry) missingSource = entry.name || "Indicator";
     }
-    const activeOwnerIds = new Set(Array.from(wanted.keys()).map((key) => `dropdown-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`));
-    setPineTables((current) => current.filter(({ ownerId }) => activeOwnerIds.has(ownerId)));
+    wantedRef.current = wanted;
+    if (missingSource) {
+      setIndicatorState({ status: "error", name: missingSource, message: "Pine source is missing from the selected version" });
+    }
 
+    // Remove indicators that were switched off or whose source changed.
     for (const [key, current] of Array.from(indicatorHandlesRef.current)) {
       const next = wanted.get(key);
       if (!next || next.source !== current.source) {
-        try { (current.handle?.remove ?? current.handle?.dispose)?.call(current.handle); } catch { /* already removed */ }
+        removeHandle(current.handle);
         indicatorHandlesRef.current.delete(key);
       }
     }
 
     if (!wanted.size && !indicatorHandlesRef.current.size) {
-      setIndicatorState({ status: "idle", name: "" });
-      return () => { cancelled = true; };
+      if (!missingSource) setIndicatorState({ status: "idle", name: "" });
+      return;
     }
 
     for (const indicator of wanted.values()) {
       if (indicatorHandlesRef.current.has(indicator.key)) continue;
+      if (pendingRef.current.get(indicator.key) === indicator.source) continue; // already running
+      pendingRef.current.set(indicator.key, indicator.source);
       setIndicatorState({ status: "loading", name: indicator.name });
+
       const id = `dropdown-${indicator.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-      console.log("indicator", indicator, "id", id);
+      const settle = () => {
+        if (pendingRef.current.get(indicator.key) === indicator.source) pendingRef.current.delete(indicator.key);
+      };
+      const stillWanted = () => wantedRef.current.get(indicator.key)?.source === indicator.source;
 
       void chart.runIndicator(indicator.source, { id, title: indicator.name }).then((result: any) => {
-        console.log(result,"message");
-        
-        
-        if (!result?.ok || !result.handle) {
-          if (cancelled) return;
-          setIndicatorState({ status: "error", name: indicator.name, message: result?.error?.message || "Pine script could not be executed" });
+        settle();
+        const handle = result?.handle;
+        if (!result?.ok || !handle) {
+          if (aliveRef.current && stillWanted()) {
+            setIndicatorState({ status: "error", name: indicator.name, message: result?.error?.message || "Pine script could not be executed" });
+          }
           return;
         }
-        const stillWanted = (activeIndicators as any[]).some((entry) => {
-          const current = resolveIndicator(entry);
-          return current?.key === indicator.key && current.source === indicator.source;
-        });
-        if (cancelled || !stillWanted || indicatorHandlesRef.current.has(indicator.key)) {
-          try { (result.handle.remove ?? result.handle.dispose)?.call(result.handle); } catch { /* already removed */ }
+        // The user may have toggled it off, or the widget unmounted, while it was running.
+        if (!aliveRef.current || !stillWanted() || indicatorHandlesRef.current.has(indicator.key)) {
+          removeHandle(handle);
           return;
         }
-        indicatorHandlesRef.current.set(indicator.key, { source: indicator.source, handle: result.handle });
+        indicatorHandlesRef.current.set(indicator.key, { source: indicator.source, handle });
         setIndicatorState({ status: "success", name: indicator.name });
       }).catch((error: any) => {
-        if (!cancelled) setIndicatorState({ status: "error", name: indicator.name, message: error?.message || "Pine script could not be executed" });
+        settle();
+        if (aliveRef.current && stillWanted()) {
+          setIndicatorState({ status: "error", name: indicator.name, message: error?.message || "Pine script could not be executed" });
+        }
       });
     }
-
-    return () => { cancelled = true; };
-  }, [activeIndicators, ready]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indicatorSignature, ready]);
 
   useEffect(() => {
     if (indicatorState.status !== "success" && indicatorState.status !== "error") return;
@@ -308,110 +276,6 @@ const unregisterAttribution = registerRendererDefaults({
   return (
     <div className="relative h-full min-h-0 w-full overflow-hidden rounded-2xl bg-white text-slate-900 dark:bg-[#131722] dark:text-[#d1d4dc]">
       <div ref={hostRef} className="absolute inset-0" />
-
-      <div className="pointer-events-none absolute inset-0 z-[35] overflow-hidden">
-        {pineTables.map(({ table }) => {
-          const minimized = !!minimizedTables[table.id];
-          const position = tablePositions[table.id];
-          const anchorStyle: React.CSSProperties = position
-            ? { left: position.left, top: position.top, width: position.width, height: position.height }
-            : {
-                left: table.position?.includes("left") ? 12 : table.position?.includes("right") ? undefined : "50%",
-                right: table.position?.includes("right") ? 12 : undefined,
-                top: table.position?.startsWith("top") ? 54 : table.position?.startsWith("middle") ? "50%" : undefined,
-                bottom: table.position?.startsWith("bottom") ? 40 : undefined,
-                transform: table.position?.startsWith("middle")
-                  ? table.position?.includes("center") ? "translate(-50%, -50%)" : "translateY(-50%)"
-                  : table.position?.includes("center") ? "translateX(-50%)" : undefined,
-              };
-          return (
-            <div
-              key={table.id}
-              className={`pointer-events-auto absolute max-w-[90%] max-h-[85%] rounded-sm shadow-lg ${minimized ? "min-w-[150px] overflow-hidden" : "min-w-[180px] min-h-[80px] resize overflow-auto"}`}
-              style={{ ...anchorStyle, ...(minimized ? { width: 180, height: 26 } : {}), background: table.bgColor ?? "rgba(0,0,0,0.82)", border: `${Math.max(1, table.frameWidth ?? 0)}px solid ${table.frameColor ?? table.borderColor ?? "#64748b"}` }}
-              onPointerUp={(event) => {
-                if (minimized) return;
-                const rect = event.currentTarget.getBoundingClientRect();
-                const bounds = hostRef.current?.getBoundingClientRect();
-                if (!bounds) return;
-                setTablePositions((current) => ({
-                  ...current,
-                  [table.id]: {
-                    left: current[table.id]?.left ?? rect.left - bounds.left,
-                    top: current[table.id]?.top ?? rect.top - bounds.top,
-                    width: rect.width,
-                    height: rect.height,
-                  },
-                }));
-              }}
-            >
-              <div
-                className="sticky top-0 z-10 flex h-5 cursor-move items-center justify-end bg-black/30 px-1"
-                title="Drag to move table"
-                onPointerDown={(event) => {
-                  event.preventDefault();
-                  const container = hostRef.current;
-                  const panel = event.currentTarget.parentElement;
-                  if (!container || !panel) return;
-                  const bounds = container.getBoundingClientRect();
-                  const rect = panel.getBoundingClientRect();
-                  const startX = event.clientX;
-                  const startY = event.clientY;
-                  const originX = rect.left - bounds.left;
-                  const originY = rect.top - bounds.top;
-                  const move = (moveEvent: PointerEvent) => setTablePositions((current) => ({
-                    ...current,
-                    [table.id]: {
-                      left: Math.max(0, Math.min(bounds.width - rect.width, originX + moveEvent.clientX - startX)),
-                      top: Math.max(0, Math.min(bounds.height - rect.height, originY + moveEvent.clientY - startY)),
-                      width: current[table.id]?.width ?? rect.width,
-                      height: current[table.id]?.height ?? rect.height,
-                    },
-                  }));
-                  const stop = () => {
-                    window.removeEventListener("pointermove", move);
-                    window.removeEventListener("pointerup", stop);
-                  };
-                  window.addEventListener("pointermove", move);
-                  window.addEventListener("pointerup", stop, { once: true });
-                }}
-              >
-                <button
-                  type="button"
-                  aria-label={minimized ? "Restore table" : "Minimize table"}
-                  title={minimized ? "Restore table" : "Minimize table"}
-                  className="flex h-4 w-4 items-center justify-center rounded text-xs text-white/80 hover:bg-white/20"
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={() => setMinimizedTables((current) => ({ ...current, [table.id]: !current[table.id] }))}
-                >{minimized ? "□" : "−"}</button>
-              </div>
-              {!minimized && <table className="h-[calc(100%-20px)] w-full table-fixed border-collapse text-[11px] leading-tight">
-                <tbody>
-                  {(table.cells ?? []).map((row: any[], rowIndex: number) => (
-                    <tr key={rowIndex}>
-                      {row.map((cell: any, colIndex: number) => (
-                        <td key={colIndex} title={cell?.tooltip} className="border px-1 py-0.5"
-                          style={{
-                            color: cell?.textColor ?? "#e2e8f0",
-                            backgroundColor: cell?.bgColor ?? "transparent",
-                            borderColor: table.borderColor ?? "rgba(148,163,184,.35)",
-                            fontSize: typeof cell?.textSize === "number" ? cell.textSize : undefined,
-                            fontWeight: cell?.bold ? 700 : 400,
-                            fontStyle: cell?.italic ? "italic" : "normal",
-                            textAlign: cell?.hAlign ?? "center",
-                            verticalAlign: cell?.vAlign ?? "middle",
-                            width: cell?.width ? `${cell.width}%` : undefined,
-                          }}
-                        >{cell?.merged ? "" : cell?.text ?? ""}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>}
-            </div>
-          );
-        })}
-      </div>
 
       {bootError && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 p-6 text-center text-sm text-rose-300">

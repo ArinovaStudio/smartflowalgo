@@ -1,9 +1,55 @@
 import type { BarRange, DataProvider, OHLCV, SymbolDescriptor, SymbolInfo } from "@luxalgo/vela";
+import {
+  aggregateBars,
+  aggregateTail,
+  bucketOpen,
+  cleanTicker,
+  mergeSorted,
+  nativeKindOf,
+  nativeMsOf,
+  planTimeframe,
+  type Bar,
+  type NativeCode,
+  type TfKind,
+  type TimeframePlan,
+} from "./Mt5timeframes";
 
-const MT5_ENDPOINT = "/api/mt5/live";
-const MAX_BARS = 5_000;
-const HISTORY_SETTLE_MS = 900;
-const MAX_HISTORY_WAIT_MS = 12_000;
+/**
+ * Vela DataProvider backed by the app's MT5 bridge.
+ *
+ *   history  GET  /api/mt5/history   short JSON requests, ranged, any number in parallel
+ *   live     POST /api/mt5/live      ONE tick stream per symbol, candles built here
+ *
+ * How request.security() is served
+ *   Vela's fetchSeries gateway does no timeframe aggregation: it calls
+ *   getBars(ticker, "<exact timeframe the script asked for>", range). So this
+ *   provider accepts ANY timeframe. MT5-native ones ("60" -> H1, "D", "W", "M")
+ *   are downloaded directly; the rest ("45", "90", "2D", "3M" ...) are resampled
+ *   from the best native timeframe. Each (symbol, native timeframe) is stored once
+ *   and shared by every consumer.
+ */
+
+const DEFAULT_HISTORY_ENDPOINT = "/api/mt5/history";
+const DEFAULT_LIVE_ENDPOINT = "/api/mt5/live";
+const DEFAULT_BARS = 1_500;
+/** Never ask the bridge for more native bars than this in one request. */
+const MAX_FETCH = 50_000;
+/** A series that has not been touched by a tick or a fetch for this long is re-synced on read. */
+const STALE_TAIL_MS = 3_000;
+/** Keep the tick stream open briefly after the last subscriber leaves (market switches resubscribe fast). */
+const FEED_CLOSE_GRACE_MS = 3_000;
+const DEFAULT_LIVE_THROTTLE_MS = 250;
+
+/**
+ * TradingView-style exchange prefixes that scripts commonly use, e.g. "TVC:DXY",
+ * "OANDA:XAUUSD", "BINANCE:BTCUSDT". Each one is registered as an alias of this
+ * provider so those symbols resolve to MT5. Edit freely. These aliases are
+ * reachable only through an explicit prefix; they do not appear in symbol search.
+ */
+export const MT5_ALIAS_PREFIXES: readonly string[] = [
+  "tvc", "fx", "fx_idc", "oanda", "forexcom", "capitalcom", "pepperstone", "icmarkets",
+  "fxcm", "eightcap", "saxo", "vantage", "binance", "bitstamp", "coinbase", "kraken", "bybit", "okx",
+];
 
 const SYMBOLS: SymbolDescriptor[] = [
   { ticker: "EURUSD", description: "Euro / US Dollar", type: "forex" },
@@ -18,163 +64,277 @@ const SYMBOLS: SymbolDescriptor[] = [
   { ticker: "ETHUSD", description: "Ethereum / US Dollar", type: "crypto" },
 ];
 
-function mt5Timeframe(timeframe: string): string {
-  const tf = String(timeframe || "1").trim();
-  const upper = tf.toUpperCase();
-  const mt5 = /^(MN|M|H|D|W)(\d+)$/i.exec(upper);
-  if (mt5) return `${mt5[1].toUpperCase()}${mt5[2]}`;
+export interface Mt5VelaProviderOptions {
+  historyEndpoint?: string;
+  liveEndpoint?: string;
+  /** Minimum gap between live bar updates pushed to one subscriber. New bars are always pushed immediately. */
+  liveThrottleMs?: number;
+  /** Override the symbol list used for search / bare-symbol resolution. */
+  symbols?: SymbolDescriptor[];
+  /** Called with a readable message when MT5 data cannot be loaded (deduplicated). */
+  onError?: (message: string) => void;
+}
 
-  if (/^\d+$/.test(tf)) {
-    const n = Number(tf);
-    const HOUR_MINUTES: Record<number, number> = { 60: 1, 120: 2, 180: 3, 240: 4, 360: 6, 480: 8, 720: 12 };
-    if (HOUR_MINUTES[n]) return `H${HOUR_MINUTES[n]}`;
-    return `M${tf}`;
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function rangeBars(bars: Bar[], range: BarRange): Bar[] {
+  let out = bars;
+  if (range.from != null) {
+    const from = range.from;
+    out = out.filter((b) => b.time >= from);
   }
+  if (range.to != null) {
+    const to = range.to;
+    out = out.filter((b) => b.time <= to);
+  }
+  if (range.limit != null && range.limit > 0 && out.length > range.limit) out = out.slice(-range.limit);
+  return out === bars ? bars.slice() : out;
+}
 
-  const pine = /^(\d+)([mMHDW])$/.exec(tf);
-  if (pine) {
-    const n = Number(pine[1]);
-    switch (pine[2].toUpperCase()) {
-      case "M": return pine[2] === "m" ? `M${n}` : `MN${n}`;
-      case "H": return `H${n}`;
-      case "D": return `D${n}`;
-      case "W": return `W${n}`;
+async function readError(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: unknown } | null;
+    if (body && typeof body.error === "string") return body.error;
+  } catch {
+    /* not JSON */
+  }
+  return `${fallback} (HTTP ${res.status})`;
+}
+
+function inferDigits(bars: readonly Bar[]): number | null {
+  if (!bars.length) return null;
+  let max = 0;
+  for (let i = Math.max(0, bars.length - 50); i < bars.length; i++) {
+    for (const value of [bars[i].open, bars[i].close]) {
+      const s = String(value);
+      if (s.includes("e")) continue;
+      const dot = s.indexOf(".");
+      if (dot >= 0) max = Math.max(max, s.length - dot - 1);
     }
   }
-  if (upper === "D") return "D1";
-  if (upper === "W") return "W1";
-  if (upper === "M") return "MN1";
-  return "M1";
+  return Math.min(max, 8);
 }
 
-function normalizeTime(value: unknown): number {
-  const time = Number(value);
-  if (!Number.isFinite(time) || time <= 0) return Date.now();
-  return Math.floor(time < 1e12 ? time * 1000 : time);
+function guessDigits(upper: string): number {
+  if (upper.includes("JPY")) return 3;
+  if (upper.startsWith("XAU") || upper.startsWith("XAG")) return 2;
+  if (upper.startsWith("BTC") || upper.startsWith("ETH")) return 2;
+  if (["DXY", "USDX", "DX"].includes(upper)) return 3;
+  return 5;
 }
 
-function intradayIntervalMs(timeframe: string): number | null {
-  const tf = String(timeframe || "").trim().toUpperCase();
-  const mt5 = /^(M|H)(\d+)$/.exec(tf);
-  if (mt5) return Number(mt5[2]) * (mt5[1] === "H" ? 3_600_000 : 60_000);
-  const pineMinutes = /^(\d+)$/.exec(tf);
-  return pineMinutes ? Number(pineMinutes[1]) * 60_000 : null;
+// ---------------------------------------------------------------------------
+// One native MT5 timeframe of one symbol
+// ---------------------------------------------------------------------------
+
+class NativeSeries {
+  bars: Bar[] = [];
+  /** True once the bridge returned fewer bars than requested: there is nothing older to fetch. */
+  genesis = false;
+  /** Last time this series was updated by a fetch or a tick. */
+  lastSync = 0;
+
+  readonly nativeMs: number;
+  private readonly kind: TfKind;
+  private maxPulled = 0;
+  private chain: Promise<unknown> = Promise.resolve();
+
+  constructor(
+    readonly symbol: string,
+    readonly native: NativeCode,
+    private readonly endpoint: string,
+  ) {
+    this.nativeMs = nativeMsOf(native);
+    this.kind = nativeKindOf(native);
+  }
+
+  last(): Bar | undefined {
+    return this.bars[this.bars.length - 1];
+  }
+
+  /** Serialise network work per series so concurrent callers never download the same thing twice. */
+  private run<T>(task: () => Promise<T>): Promise<T> {
+    const result = this.chain.then(task);
+    this.chain = result.catch(() => undefined);
+    return result;
+  }
+
+  private countAtOrBefore(t: number): number {
+    let lo = 0;
+    let hi = this.bars.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (this.bars[mid].time <= t) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+
+  private async download(count: number): Promise<Bar[]> {
+    const url =
+      `${this.endpoint}?symbol=${encodeURIComponent(this.symbol)}` +
+      `&timeframe=${this.native}&count=${count}`;
+    const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(45_000) });
+    if (!res.ok) throw new Error(await readError(res, `MT5 history for ${this.symbol} ${this.native} failed`));
+    const payload = (await res.json()) as { bars?: unknown } | null;
+    const rows = Array.isArray(payload?.bars) ? (payload!.bars as unknown[]) : [];
+    const out: Bar[] = [];
+    for (const row of rows) {
+      if (!Array.isArray(row)) continue;
+      const [time, open, high, low, close, volume] = row.map(Number);
+      if (![time, open, high, low, close].every(Number.isFinite)) continue;
+      out.push({ time, open, high, low, close, volume: Number.isFinite(volume) ? volume : 0 });
+    }
+    return out;
+  }
+
+  /** Make sure the store holds at least `want` target bars that end at or before `toMs`. */
+  ensure(want: number, factor: number, toMs: number): Promise<void> {
+    return this.run(async () => {
+      const need = (want + 1) * factor + 5;
+      const first = this.bars[0];
+      if (first && this.genesis) return;
+
+      let count: number;
+      if (!first || toMs < first.time) {
+        // Nothing at or before `toMs` yet: the bridge only returns the NEWEST n bars,
+        // so n must reach back past `toMs`. (Calendar time over-counts weekends; that is fine.)
+        count = Math.ceil((Date.now() - Math.min(toMs, Date.now())) / this.nativeMs) + need;
+      } else {
+        const have = this.countAtOrBefore(toMs);
+        if (have >= need) return;
+        count = this.bars.length - have + need;
+      }
+      count = Math.min(count, MAX_FETCH);
+      if (count <= this.maxPulled) return; // already asked for at least this much
+
+      const rows = await this.download(count);
+      this.maxPulled = Math.max(this.maxPulled, count);
+      if (rows.length < count) this.genesis = true;
+      this.bars = mergeSorted(this.bars, rows);
+      this.lastSync = Date.now();
+    });
+  }
+
+  /** Re-download the newest few bars and merge them in (heals gaps, refreshes the forming bar). */
+  refreshTail(): Promise<void> {
+    return this.run(async () => {
+      const lastTime = this.last()?.time ?? 0;
+      const gap = lastTime ? Math.ceil((Date.now() - lastTime) / this.nativeMs) : 1_000;
+      const count = Math.min(Math.max(gap + 3, 3), 1_000);
+      const rows = await this.download(count);
+      this.bars = mergeSorted(this.bars, rows);
+      this.lastSync = Date.now();
+    });
+  }
+
+  refreshIfStale(maxAgeMs: number): Promise<void> {
+    if (!this.bars.length || Date.now() - this.lastSync < maxAgeMs) return Promise.resolve();
+    return this.refreshTail();
+  }
+
+  /**
+   * Fold one tick into the forming bar, or open a new bar.
+   * New bars are aligned to the previous bar's real open time, so whatever the broker's
+   * session offset is, live candles line up with history. Returns null if not applicable.
+   */
+  applyTick(price: number, t: number, volume: number): Bar | null {
+    const last = this.last();
+    if (!last || t < last.time) return null;
+    const open = this.kind === "month"
+      ? bucketOpen("month", 1, t)
+      : last.time + Math.floor((t - last.time) / this.nativeMs) * this.nativeMs;
+    const v = volume > 0 ? volume : 1; // MT5 history counts ticks, so count ticks live too
+    this.lastSync = Date.now();
+
+    if (open === last.time) {
+      // Replace instead of mutating: earlier getBars() results may still reference the old object.
+      const next: Bar = {
+        time: last.time,
+        open: last.open,
+        high: Math.max(last.high, price),
+        low: Math.min(last.low, price),
+        close: price,
+        volume: last.volume + v,
+      };
+      this.bars[this.bars.length - 1] = next;
+      return next;
+    }
+    if (open < last.time) return null;
+    const bar: Bar = { time: open, open: price, high: price, low: price, close: price, volume: v };
+    this.bars.push(bar);
+    return bar;
+  }
 }
 
-function rangeBars(bars: Iterable<OHLCV>, range: BarRange = {}): OHLCV[] {
-  let result = Array.from(bars).sort((a, b) => a.time - b.time);
-  if (range.from != null) result = result.filter((bar) => bar.time >= range.from!);
-  if (range.to != null) result = result.filter((bar) => bar.time <= range.to!);
-  if (range.limit && result.length > range.limit) result = result.slice(-range.limit);
-  return result;
+// ---------------------------------------------------------------------------
+// Live tick feed: one SSE stream per symbol
+// ---------------------------------------------------------------------------
+
+interface Tick {
+  t: number;
+  p: number;
+  v: number;
 }
 
-class SharedMt5Stream {
-  readonly key: string;
-  readonly bars = new Map<number, OHLCV>();
-  readonly listeners = new Set<(bar: OHLCV) => void>();
-  refs = 0;
-  closeTimer: ReturnType<typeof setTimeout> | null = null;
-  error: Error | null = null;
-
+class TickFeed {
   private closed = false;
-  private settled = false;
-  private newestTime = 0;
-  private timestampOffsetMs = 0;
   private controller: AbortController | null = null;
-  private settleTimer: ReturnType<typeof setTimeout> | null = null;
-  private maxTimer: ReturnType<typeof setTimeout> | null = null;
-  private resolveReady!: () => void;
-  private readonly readyPromise = new Promise<void>((resolve) => { this.resolveReady = resolve; });
+  private seenReady = false;
+  private reported = false;
 
   constructor(
     private readonly symbol: string,
-    private readonly timeframe: string,
+    private readonly endpoint: string,
+    private readonly cb: {
+      onTick: (tick: Tick) => void;
+      onReconnect: () => void;
+      onError: (message: string) => void;
+    },
   ) {
-    this.key = `${symbol}|${timeframe}`;
-    this.maxTimer = setTimeout(() => this.markReady(), MAX_HISTORY_WAIT_MS);
     void this.run();
-  }
-
-  ready(): Promise<void> {
-    return this.readyPromise;
-  }
-
-  addListener(listener: (bar: OHLCV) => void): () => void {
-    this.listeners.add(listener);
-    void this.ready().then(() => {
-      const last = this.last();
-      if (last && this.listeners.has(listener)) listener(last);
-    });
-    return () => this.listeners.delete(listener);
-  }
-
-  last(): OHLCV | undefined {
-    let last: OHLCV | undefined;
-    for (const bar of this.bars.values()) if (!last || bar.time > last.time) last = bar;
-    return last;
-  }
-
-  snapshot(range?: BarRange): OHLCV[] {
-    return rangeBars(this.bars.values(), range);
   }
 
   close(): void {
     this.closed = true;
-    if (this.closeTimer) clearTimeout(this.closeTimer);
-    if (this.settleTimer) clearTimeout(this.settleTimer);
-    if (this.maxTimer) clearTimeout(this.maxTimer);
-    this.listeners.clear();
     this.controller?.abort();
-    this.markReady();
-  }
-
-  private markReady(): void {
-    if (this.settled) return;
-    this.settled = true;
-    if (this.settleTimer) clearTimeout(this.settleTimer);
-    if (this.maxTimer) clearTimeout(this.maxTimer);
-    this.resolveReady();
-  }
-
-  private bumpSettleTimer(): void {
-    if (this.settled) return;
-    if (this.settleTimer) clearTimeout(this.settleTimer);
-    this.settleTimer = setTimeout(() => this.markReady(), HISTORY_SETTLE_MS);
   }
 
   private async run(): Promise<void> {
     let retry = 0;
     while (!this.closed) {
       try {
-        await this.connectOnce();
+        await this.connect();
         retry = 0;
-      } catch (error: any) {
-        if (this.closed || error?.name === "AbortError") return;
-        this.error = error instanceof Error ? error : new Error(String(error));
-        console.error(`[MT5 Vela] ${this.symbol} ${this.timeframe} stream failed:`, this.error);
+      } catch (error) {
+        if (this.closed || (error as { name?: string })?.name === "AbortError") return;
+        if (!this.reported) {
+          this.reported = true;
+          this.cb.onError(`Live MT5 ticks for ${this.symbol} interrupted: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
       if (this.closed) return;
-      this.markReady();
       retry++;
-      await new Promise((resolve) => setTimeout(resolve, Math.min(1_000 * 2 ** Math.min(retry, 4), 10_000)));
+      await sleep(Math.min(1_000 * 2 ** Math.min(retry, 4), 10_000));
     }
   }
 
-  private async connectOnce(): Promise<void> {
+  private async connect(): Promise<void> {
     this.controller = new AbortController();
-    const response = await fetch(MT5_ENDPOINT, {
+    const res = await fetch(this.endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol: this.symbol, timeframe: this.timeframe }),
+      body: JSON.stringify({ symbol: this.symbol }),
       signal: this.controller.signal,
       cache: "no-store",
     });
-    if (!response.ok) throw new Error(`MT5 endpoint returned HTTP ${response.status}`);
-    if (!response.body) throw new Error("MT5 stream response has no body");
+    if (!res.ok || !res.body) throw new Error(await readError(res, "MT5 live stream failed"));
 
-    this.error = null;
-    const reader = response.body.getReader();
+    const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
     while (!this.closed) {
@@ -185,121 +345,157 @@ class SharedMt5Stream {
       buffer = frames.pop() ?? "";
       for (const frame of frames) this.handleFrame(frame);
     }
-    if (buffer.trim()) this.handleFrame(buffer);
   }
 
   private handleFrame(frame: string): void {
-    const eventName = frame.split(/\r?\n/).find((line) => line.startsWith("event:"))?.slice(6).trim();
-    const data = frame.split(/\r?\n/).filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).trimStart()).join("\n").trim();
-    if (data) {
-      try {
-        const parsed = JSON.parse(data);
-        const items = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.candles) ? parsed.candles : [parsed];
-        for (const item of items) this.ingest(item);
-        this.bumpSettleTimer();
-      } catch (error) {
-        console.error("[MT5 Vela] Could not parse candle frame:", error);
+    let event = "message";
+    const data: string[] = [];
+    for (const line of frame.split(/\r?\n/)) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+    }
+    if (event === "ready") {
+      if (this.seenReady) this.cb.onReconnect(); // we may have missed ticks: re-sync the tail
+      this.seenReady = true;
+      this.reported = false;
+      return;
+    }
+    if (!data.length) return; // heartbeat comment
+    try {
+      const parsed = JSON.parse(data.join("\n")) as { t?: unknown; p?: unknown; v?: unknown; message?: unknown };
+      if (event === "error") {
+        if (typeof parsed.message === "string") this.cb.onError(parsed.message);
+        return;
       }
-    }
-    if (eventName === "history_end") {
-      this.alignHistoryClock();
-      this.markReady();
-    }
-  }
-
-  /**
-   * Some MT5 bridges serialize broker-local timestamps as if they were UTC.
-   * Vela uses epoch time to compute the bar-close countdown, so a consistent
-   * broker offset otherwise appears as several hours remaining on every bar.
-   * Infer only quarter-hour offsets when the newest history bar is current;
-   * old market data and ordinary gaps are left untouched.
-   */
-  private alignHistoryClock(): void {
-    const interval = intradayIntervalMs(this.timeframe);
-    if (!interval || this.bars.size === 0) return;
-    const latest = this.last();
-    if (!latest) return;
-    const now = Date.now();
-    const currentBarOpen = Math.floor(now / interval) * interval;
-    const skew = latest.time - currentBarOpen;
-    const quarterHour = 15 * 60_000;
-    const offset = Math.round(skew / quarterHour) * quarterHour;
-    const residual = Math.abs(skew - offset);
-    if (Math.abs(offset) < 2 * interval || Math.abs(offset) > 14 * 60 * 60_000 || residual > Math.max(2_000, interval / 4)) return;
-
-    this.timestampOffsetMs = offset;
-    const shifted = Array.from(this.bars.values(), (bar) => ({ ...bar, time: bar.time - offset }));
-    this.bars.clear();
-    for (const bar of shifted) this.bars.set(bar.time, bar);
-    this.newestTime -= offset;
-  }
-
-  private ingest(raw: any): void {
-    const open = Number(raw?.open);
-    const high = Number(raw?.high);
-    const low = Number(raw?.low);
-    const close = Number(raw?.close);
-    if (![open, high, low, close].every(Number.isFinite) || open <= 0) return;
-    const time = normalizeTime(raw?.time ?? raw?.openTime) - this.timestampOffsetMs;
-    const bar: OHLCV = { time, open, high, low, close, volume: Number(raw?.volume ?? raw?.tick_volume ?? 0) };
-    this.bars.set(time, bar);
-    const isTail = time >= this.newestTime;
-    if (time > this.newestTime) this.newestTime = time;
-    if (this.bars.size > MAX_BARS) {
-      const oldest = Array.from(this.bars.keys()).sort((a, b) => a - b).slice(0, this.bars.size - MAX_BARS);
-      for (const key of oldest) this.bars.delete(key);
-    }
-    if (isTail && this.settled) {
-      for (const listener of this.listeners) {
-        try { listener(bar); } catch (error) { console.error("[MT5 Vela] subscriber failed:", error); }
+      const t = Number(parsed.t);
+      const p = Number(parsed.p);
+      if (Number.isFinite(t) && Number.isFinite(p) && p > 0) {
+        this.cb.onTick({ t, p, v: Number(parsed.v) || 0 });
       }
+    } catch {
+      /* ignore malformed frame */
     }
   }
 }
 
-/** Vela DataProvider backed by the application's MT5 history + live SSE route. */
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
+
+interface Subscriber {
+  plan: TimeframePlan;
+  onBar: (bar: OHLCV) => void;
+  lastTime: number;
+  lastAt: number;
+  pending: Bar | null;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+class SymbolState {
+  readonly series = new Map<NativeCode, NativeSeries>();
+  readonly subs = new Set<Subscriber>();
+  feed: TickFeed | null = null;
+  closeTimer: ReturnType<typeof setTimeout> | null = null;
+  constructor(readonly symbol: string) { }
+}
+
 export class Mt5VelaProvider implements DataProvider {
-  private readonly streams = new Map<string, SharedMt5Stream>();
+  private readonly states = new Map<string, SymbolState>();
+  private readonly historyEndpoint: string;
+  private readonly liveEndpoint: string;
+  private readonly throttleMs: number;
+  private readonly symbols: SymbolDescriptor[];
+  private lastReport = { message: "", at: 0 };
+  private disposed = false;
+
+  constructor(private readonly options: Mt5VelaProviderOptions = {}) {
+    this.historyEndpoint = options.historyEndpoint ?? DEFAULT_HISTORY_ENDPOINT;
+    this.liveEndpoint = options.liveEndpoint ?? DEFAULT_LIVE_ENDPOINT;
+    this.throttleMs = options.liveThrottleMs ?? DEFAULT_LIVE_THROTTLE_MS;
+    this.symbols = options.symbols ?? SYMBOLS;
+  }
 
   info() {
     return {
       name: "mt5",
       displayName: "MT5",
       requiresApiKey: false,
+      // MT5-native timeframes shown in the toolbar. Any other timeframe a script
+      // requests (45, 90, 2D, 3M ...) is still served by resampling.
       supportedTimeframes: ["1", "2", "3", "4", "5", "6", "10", "12", "15", "20", "30", "60", "120", "180", "240", "360", "480", "720", "D", "W", "M"],
       capabilities: { enumerate: true, stream: true, symbolInfo: true },
     };
   }
 
-  async getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
-    const stream = this.acquire(ticker, timeframe);
+  async getBars(ticker: string, timeframe: string, range: BarRange = {}): Promise<OHLCV[]> {
     try {
-      await stream.ready();
-      if (stream.error && stream.snapshot().length === 0) throw stream.error;
-      return stream.snapshot(range);
-    } finally {
-      this.release(stream, 8_000);
+      const plan = planTimeframe(timeframe);
+      const series = this.seriesFor(cleanTicker(ticker), plan.native);
+      const now = Date.now();
+
+      // How many target bars does this request need?
+      let want: number;
+      if (range.from != null) {
+        const end = Math.min(range.to ?? now, now);
+        const span = Math.max(0, Math.ceil((end - range.from) / plan.ms)) + 3;
+        want = range.limit != null ? Math.min(range.limit, span) : span;
+      } else {
+        want = range.limit ?? DEFAULT_BARS;
+      }
+      want = Math.max(2, Math.floor(want));
+
+      await series.ensure(want, plan.factor, range.to ?? Number.POSITIVE_INFINITY);
+      if (range.to == null || range.to >= now - plan.ms) await series.refreshIfStale(STALE_TAIL_MS);
+
+      const bars = aggregateBars(series.bars, plan, !series.genesis);
+      return rangeBars(bars, range);
+    } catch (error) {
+      this.report(error);
+      throw error;
     }
   }
 
   subscribe(ticker: string, timeframe: string, onBar: (bar: OHLCV) => void): () => void {
-    const stream = this.acquire(ticker, timeframe);
-    const unsubscribeListener = stream.addListener(onBar);
+    let plan: TimeframePlan;
+    try {
+      plan = planTimeframe(timeframe);
+    } catch (error) {
+      this.report(error);
+      return () => { };
+    }
+    const state = this.stateFor(cleanTicker(ticker));
+    const sub: Subscriber = { plan, onBar, lastTime: 0, lastAt: 0, pending: null, timer: null };
+    state.subs.add(sub);
+    this.attach(state);
+
     return () => {
-      unsubscribeListener();
-      this.release(stream, 3_000);
+      if (sub.timer) clearTimeout(sub.timer);
+      sub.timer = null;
+      sub.pending = null;
+      state.subs.delete(sub);
+      this.detach(state);
     };
   }
 
   async listSymbols(): Promise<SymbolDescriptor[]> {
-    return SYMBOLS;
+    return this.symbols;
   }
 
   async getSymbolInfo(ticker: string): Promise<SymbolInfo> {
-    const symbol = ticker.toUpperCase();
-    const digits = symbol.includes("JPY") ? 3 : symbol.startsWith("XAU") ? 2 : 5;
-    const descriptor = SYMBOLS.find((entry) => entry.ticker === symbol);
+    const symbol = cleanTicker(ticker);
+    const upper = symbol.toUpperCase();
+    const descriptor = this.symbols.find((entry) => entry.ticker.toUpperCase() === upper);
+
+    let digits: number | null = null;
+    const loaded = this.states.get(symbol);
+    if (loaded) {
+      for (const series of loaded.series.values()) {
+        digits = inferDigits(series.bars);
+        if (digits !== null) break;
+      }
+    }
+    const d = digits ?? guessDigits(upper);
+
     return {
       ticker: symbol,
       name: descriptor?.description ?? symbol,
@@ -309,44 +505,156 @@ export class Mt5VelaProvider implements DataProvider {
       root: symbol,
       timezone: "Etc/UTC",
       session: "24x7",
-      mintick: 10 ** -digits,
-      pricescale: 10 ** digits,
+      mintick: 10 ** -d,
+      pricescale: 10 ** d,
       minmove: 1,
       pointvalue: 1,
-      currency: symbol.slice(-3),
-      basecurrency: symbol.slice(0, 3),
+      currency: symbol.length >= 6 ? symbol.slice(-3) : "USD",
+      basecurrency: symbol.length >= 6 ? symbol.slice(0, 3) : symbol,
+    };
+  }
+
+  /**
+   * A view of this provider to register under another name ("tvc", "oanda" ...).
+   * It shares all data and streams but lists no symbols, so symbol search is not duplicated.
+   */
+  alias(name: string): DataProvider {
+    return {
+      info: () => ({ ...this.info(), name, displayName: name.toUpperCase(), capabilities: { enumerate: false, stream: true, symbolInfo: true } }),
+      getBars: (ticker: string, timeframe: string, range: BarRange) => this.getBars(ticker, timeframe, range),
+      subscribe: (ticker: string, timeframe: string, onBar: (bar: OHLCV) => void) => this.subscribe(ticker, timeframe, onBar),
+      getSymbolInfo: (ticker: string) => this.getSymbolInfo(ticker),
+      listSymbols: async () => [],
     };
   }
 
   dispose(): void {
-    for (const stream of this.streams.values()) stream.close();
-    this.streams.clear();
+    this.disposed = true;
+    for (const state of this.states.values()) {
+      if (state.closeTimer) clearTimeout(state.closeTimer);
+      state.feed?.close();
+      state.feed = null;
+      for (const sub of state.subs) if (sub.timer) clearTimeout(sub.timer);
+      state.subs.clear();
+    }
+    this.states.clear();
   }
 
-  private acquire(ticker: string, timeframe: string): SharedMt5Stream {
-    const code = mt5Timeframe(timeframe);
-    const key = `${ticker}|${code}`;
-    let stream = this.streams.get(key);
-    if (!stream) {
-      stream = new SharedMt5Stream(ticker, code);
-      this.streams.set(key, stream);
+  // ---- internals ----------------------------------------------------------
+
+  private stateFor(symbol: string): SymbolState {
+    let state = this.states.get(symbol);
+    if (!state) {
+      state = new SymbolState(symbol);
+      this.states.set(symbol, state);
     }
-    stream.refs++;
-    if (stream.closeTimer) {
-      clearTimeout(stream.closeTimer);
-      stream.closeTimer = null;
-    }
-    return stream;
+    return state;
   }
 
-  private release(stream: SharedMt5Stream, graceMs: number): void {
-    stream.refs = Math.max(0, stream.refs - 1);
-    if (stream.refs > 0) return;
-    if (stream.closeTimer) clearTimeout(stream.closeTimer);
-    stream.closeTimer = setTimeout(() => {
-      if (stream.refs > 0) return;
-      stream.close();
-      if (this.streams.get(stream.key) === stream) this.streams.delete(stream.key);
-    }, graceMs);
+  private seriesFor(symbol: string, native: NativeCode): NativeSeries {
+    const state = this.stateFor(symbol);
+    let series = state.series.get(native);
+    if (!series) {
+      series = new NativeSeries(symbol, native, this.historyEndpoint);
+      state.series.set(native, series);
+    }
+    return series;
+  }
+
+  private attach(state: SymbolState): void {
+    if (state.closeTimer) {
+      clearTimeout(state.closeTimer);
+      state.closeTimer = null;
+    }
+    if (state.feed || this.disposed) return;
+    state.feed = new TickFeed(state.symbol, this.liveEndpoint, {
+      onTick: (tick) => this.onTick(state, tick),
+      onReconnect: () => void this.heal(state),
+      onError: (message) => this.report(new Error(message)),
+    });
+  }
+
+  private detach(state: SymbolState): void {
+    if (state.subs.size > 0) return;
+    if (state.closeTimer) clearTimeout(state.closeTimer);
+    state.closeTimer = setTimeout(() => {
+      state.closeTimer = null;
+      if (state.subs.size === 0) {
+        state.feed?.close();
+        state.feed = null;
+      }
+    }, FEED_CLOSE_GRACE_MS);
+  }
+
+  /** A tick updates EVERY loaded timeframe of that symbol, so request.security() HTF data stays live too. */
+  private onTick(state: SymbolState, tick: Tick): void {
+    for (const series of state.series.values()) {
+      if (series.applyTick(tick.p, tick.t, tick.v)) this.fanOut(state, series);
+    }
+  }
+
+  private fanOut(state: SymbolState, series: NativeSeries): void {
+    const last = series.last();
+    if (!last) return;
+    for (const sub of state.subs) {
+      if (sub.plan.native !== series.native) continue;
+      const bar = sub.plan.factor === 1 ? last : aggregateTail(series.bars, sub.plan, last.time);
+      if (bar) this.push(sub, bar);
+    }
+  }
+
+  private async heal(state: SymbolState): Promise<void> {
+    for (const series of state.series.values()) {
+      try {
+        await series.refreshTail();
+        this.fanOut(state, series);
+      } catch {
+        /* the next tick or read will re-sync */
+      }
+    }
+  }
+
+  /** Emit a new bar at once; coalesce updates to the forming bar so heavy scripts are not re-run per tick. */
+  private push(sub: Subscriber, bar: Bar): void {
+    const now = Date.now();
+    if (bar.time !== sub.lastTime || now - sub.lastAt >= this.throttleMs) {
+      if (sub.timer) clearTimeout(sub.timer);
+      sub.timer = null;
+      sub.pending = null;
+      this.deliver(sub, bar, now);
+      return;
+    }
+    sub.pending = bar;
+    if (!sub.timer) {
+      sub.timer = setTimeout(() => {
+        sub.timer = null;
+        const pending = sub.pending;
+        sub.pending = null;
+        if (pending) this.deliver(sub, pending, Date.now());
+      }, Math.max(0, this.throttleMs - (now - sub.lastAt)));
+    }
+  }
+
+  private deliver(sub: Subscriber, bar: Bar, now: number): void {
+    sub.lastTime = bar.time;
+    sub.lastAt = now;
+    try {
+      sub.onBar(bar);
+    } catch (error) {
+      console.error("[MT5 Vela] subscriber failed:", error);
+    }
+  }
+
+  private report(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    const now = Date.now();
+    if (message === this.lastReport.message && now - this.lastReport.at < 10_000) return;
+    this.lastReport = { message, at: now };
+    console.error("[MT5 Vela]", message);
+    try {
+      this.options.onError?.(message);
+    } catch {
+      /* reporting must never throw */
+    }
   }
 }
