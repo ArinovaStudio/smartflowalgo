@@ -458,7 +458,21 @@ export class Mt5VelaProvider implements DataProvider {
 
   /** Current MT5 server-clock epoch, used only by the chart's candle countdown. */
   chartNow(): number {
-    if (this.serverClockOffsets.length === 0) return Date.now();
+    if (this.serverClockOffsets.length === 0) {
+      for (const state of this.states.values()) {
+        for (const series of state.series.values()) {
+          const last = series.last();
+          if (last && last.time > 0) {
+            const approxOffset = last.time - Date.now();
+            if (Number.isFinite(approxOffset) && Math.abs(approxOffset) <= 24 * 60 * 60 * 1_000) {
+              const roundedOffset = Math.round(approxOffset / (15 * 60 * 1000)) * (15 * 60 * 1000);
+              return Date.now() + roundedOffset;
+            }
+          }
+        }
+      }
+      return Date.now();
+    }
     const sorted = [...this.serverClockOffsets].sort((a, b) => a - b);
     return Date.now() + sorted[Math.floor(sorted.length / 2)];
   }

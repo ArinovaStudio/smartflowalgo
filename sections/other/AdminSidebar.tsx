@@ -45,16 +45,25 @@ export default function AdminSidebar() {
   const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [mounted, setMounted] = useState(false);
 
+  const isChartRoute = pathname === "/admin/terminal/chart";
+
   // Restore collapsed state + theme from localStorage
   useEffect(() => {
     setMounted(true);
-    const saved = localStorage.getItem(SIDEBAR_KEY);
-    if (saved === "true") setCollapsed(true);
+    if (isChartRoute) {
+      setCollapsed(true);
+      localStorage.setItem(SIDEBAR_KEY, "true");
+    } else {
+      const saved = localStorage.getItem(SIDEBAR_KEY);
+      if (saved === "true") setCollapsed(true);
+    }
 
     const savedTheme = (localStorage.getItem("theme") as "light" | "dark") || "dark";
     setTheme(savedTheme);
     applyTheme(savedTheme);
-  }, []);
+  }, [isChartRoute]);
+
+  const isCollapsed = isChartRoute || collapsed;
 
   function applyTheme(t: "light" | "dark") {
     if (typeof window === "undefined") return;
@@ -63,11 +72,12 @@ export default function AdminSidebar() {
 
   const toggleCollapse = useCallback(() => {
     setCollapsed((prev) => {
-      const next = !prev;
+      const current = isChartRoute ? (collapsed ? prev : true) : prev;
+      const next = !current;
       localStorage.setItem(SIDEBAR_KEY, String(next));
       return next;
     });
-  }, []);
+  }, [isChartRoute, collapsed]);
 
   const toggleTheme = useCallback(() => {
     const next = theme === "dark" ? "light" : "dark";
@@ -87,7 +97,7 @@ export default function AdminSidebar() {
       ═══════════════════════════════════════════ */}
       <header
         className="fixed top-0 right-0 z-40 h-14 flex items-center gap-3 px-4 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md transition-all duration-300"
-        style={{ left: collapsed ? "4rem" : "16rem" }}
+        style={{ left: isCollapsed ? "4rem" : "16rem" }}
       >
         {/* Mobile hamburger */}
         <button
@@ -188,17 +198,17 @@ export default function AdminSidebar() {
           fixed left-0 top-0 z-50 h-screen flex flex-col
           bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800
           transition-all duration-300 ease-in-out
-          ${collapsed ? "w-16" : "w-64"}
+          ${isCollapsed ? "w-16" : "w-64"}
           ${mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
         `}
       >
         {/* Sidebar header row */}
         <div
           className={`flex h-14 items-center border-b border-slate-200 dark:border-slate-800 px-3 shrink-0 ${
-            collapsed ? "justify-center" : "justify-between"
+            isCollapsed ? "justify-center" : "justify-between"
           }`}
         >
-          {!collapsed && (
+          {!isCollapsed && (
             <div className="flex items-center gap-2.5 overflow-hidden">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/15 border border-sky-500/20">
                 <LayoutDashboard className="h-3.5 w-3.5 text-sky-400" />
@@ -209,7 +219,7 @@ export default function AdminSidebar() {
             </div>
           )}
 
-          {collapsed && (
+          {isCollapsed && (
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500/15 border border-sky-500/20">
               <LayoutDashboard className="h-3.5 w-3.5 text-sky-400" />
             </div>
@@ -219,10 +229,10 @@ export default function AdminSidebar() {
           <button
             type="button"
             onClick={toggleCollapse}
-            className="hidden md:flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-white transition-colors"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="hidden md:flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {collapsed ? (
+            {isCollapsed ? (
               <ChevronRight className="h-4 w-4" />
             ) : (
               <ChevronLeft className="h-4 w-4" />
@@ -242,18 +252,18 @@ export default function AdminSidebar() {
         {/* Nav links */}
         <nav className="flex-1 space-y-1 px-2 py-3 overflow-y-auto">
           {NAV_ITEMS.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = pathname === item.href || (item.href !== "/admin" && pathname.startsWith(item.href + "/"));
             const Icon = item.icon;
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
-                title={collapsed ? item.label : undefined}
+                title={isCollapsed ? item.label : undefined}
                 className={`
                   flex items-center gap-3 rounded-lg px-2.5 py-2.5
                   text-sm font-medium transition-all border
-                  ${collapsed ? "justify-center" : ""}
+                  ${isCollapsed ? "justify-center" : ""}
                   ${
                     isActive
                       ? "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20"
@@ -262,7 +272,7 @@ export default function AdminSidebar() {
                 `}
               >
                 <Icon className="h-4 w-4 shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
+                {!isCollapsed && <span className="truncate">{item.label}</span>}
               </Link>
             );
           })}
@@ -270,7 +280,7 @@ export default function AdminSidebar() {
 
         {/* Sidebar footer — user card */}
         <div className="border-t border-slate-200 dark:border-slate-800 shrink-0">
-          {collapsed ? (
+          {isCollapsed ? (
             <div className="flex justify-center py-3.5">
               <div className="w-8 h-8 rounded-full bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sky-400 text-xs font-bold">
                 {userInitial}

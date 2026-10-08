@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import { useEffect } from "react";
 import {
     LayoutDashboard, LineChart, Sparkles, LogOut, Sun, Moon, Menu, X,
     ChevronLeft, ChevronRight, User,
@@ -9,6 +10,7 @@ import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { usePortal } from "./PortalContext";
+import UserPortalLoader from "./UserPortalLoader";
 
 export default function PortalShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
@@ -20,51 +22,14 @@ export default function PortalShell({ children }: { children: React.ReactNode })
         selectedIndicatorIds, appliedToast,
     } = usePortal();
 
+    useEffect(() => {
+        const chartRoute = pathname === "/user/chart";
+        setSidebarCollapsed(chartRoute);
+        if (chartRoute) setMobileMenuOpen(false);
+    }, [pathname, setSidebarCollapsed, setMobileMenuOpen]);
+
     if (loading) {
-        return (
-            <div className="h-screen w-screen flex items-center justify-center overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white">
-                <div className="flex flex-col items-center gap-6">
-                    <div className="flex items-center gap-3">
-                        <div className="h-11 w-11 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-500 flex items-center justify-center font-black text-lg">
-                            SF
-                        </div>
-                        <div>
-                            <h2 className="font-extrabold text-base tracking-tight bg-gradient-to-r from-sky-400 to-indigo-400 bg-clip-text text-transparent">
-                                SmartFlowAlgo
-                            </h2>
-                            <p className="text-[10px] text-slate-400 font-semibold">
-                                Trading Platform
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="relative h-14 w-14 flex items-center justify-center">
-                        <div className="absolute inset-0 rounded-full border-[3px] border-slate-200 dark:border-slate-800" />
-                        <div className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-sky-500 animate-spin" />
-                        <div className="h-7 w-7 rounded-full bg-sky-500/10 flex items-center justify-center">
-                            <div className="h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
-                        </div>
-                    </div>
-
-                    <div className="text-center space-y-1.5">
-                        <h3 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">
-                            Preparing Your Workspace
-                        </h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Syncing your trading account and indicators...
-                        </p>
-                    </div>
-
-                    <div className="h-1 w-48 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800">
-                        <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-sky-500 to-indigo-500 animate-[loading_1.5s_ease-in-out_infinite]" />
-                    </div>
-
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                        Secure Trading Environment
-                    </span>
-                </div>
-            </div>
-        );
+        return <UserPortalLoader />;
     }
 
     if (error || !user) {
@@ -189,11 +154,12 @@ export default function PortalShell({ children }: { children: React.ReactNode })
             {mobileMenuOpen && <div onClick={() => setMobileMenuOpen(false)} className="fixed inset-0 z-30 bg-black/60 md:hidden backdrop-blur-xs" />}
 
             <div className="flex-1 h-full flex flex-col min-w-0 overflow-hidden">
-                <header className="h-12 flex items-center justify-between px-3 sm:px-4 border-b border-slate-200 dark:border-slate-800/80 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md shrink-0 z-30">
+                {pageTitle !== "SmartFlow Live Terminal" && (
+                    <header className="h-12 flex items-center justify-between px-3 sm:px-4 border-b border-slate-200 dark:border-slate-800/80 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md shrink-0 z-30">
                     <div className="flex items-center gap-2.5">
-                        <button type="button" onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="hidden md:flex p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors" title={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}>
+                        {/* <button type="button" onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="hidden md:flex p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors" title={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}>
                             {sidebarCollapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}
-                        </button>
+                        </button> */}
                         <button type="button" onClick={() => setMobileMenuOpen(true)} className="md:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900">
                             <Menu size={18} />
                         </button>
@@ -217,6 +183,7 @@ export default function PortalShell({ children }: { children: React.ReactNode })
                         )}
                     </div>
                 </header>
+                )}
 
                 <main className={`flex-1 min-h-0 ${pathname === "/user/chart" ? "p-1 sm:p-1.5 overflow-hidden flex flex-col" : "p-4 sm:p-6 overflow-y-auto"}`}>
                     {children}
