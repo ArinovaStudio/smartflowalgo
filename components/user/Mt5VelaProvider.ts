@@ -12,7 +12,7 @@ import {
   type NativeCode,
   type TfKind,
   type TimeframePlan,
-} from "./Mt5timeframes";
+} from "./mt5Timeframes";
 
 /**
  * Vela DataProvider backed by the app's MT5 bridge.
@@ -39,6 +39,7 @@ const STALE_TAIL_MS = 3_000;
 /** Keep the tick stream open briefly after the last subscriber leaves (market switches resubscribe fast). */
 const FEED_CLOSE_GRACE_MS = 3_000;
 const DEFAULT_LIVE_THROTTLE_MS = 250;
+const SERVER_CLOCK_SAMPLE_COUNT = 9;
 
 /**
  * TradingView-style exchange prefixes that scripts commonly use, e.g. "TVC:DXY",
@@ -142,6 +143,8 @@ class NativeSeries {
   private readonly kind: TfKind;
   private maxPulled = 0;
   private chain: Promise<unknown> = Promise.resolve();
+  private latestLiveBar: Bar | null = null;
+  private latestLiveAt = 0;
 
   constructor(
     readonly symbol: string,
@@ -215,7 +218,7 @@ class NativeSeries {
       const rows = await this.download(count);
       this.maxPulled = Math.max(this.maxPulled, count);
       if (rows.length < count) this.genesis = true;
-      this.bars = mergeSorted(this.bars, rows);
+      this.mergeHistory(rows);
       this.lastSync = Date.now();
     });
   }
@@ -227,7 +230,7 @@ class NativeSeries {
       const gap = lastTime ? Math.ceil((Date.now() - lastTime) / this.nativeMs) : 1_000;
       const count = Math.min(Math.max(gap + 3, 3), 1_000);
       const rows = await this.download(count);
-      this.bars = mergeSorted(this.bars, rows);
+      this.mergeHistory(rows);
       this.lastSync = Date.now();
     });
   }
@@ -262,12 +265,37 @@ class NativeSeries {
         volume: last.volume + v,
       };
       this.bars[this.bars.length - 1] = next;
+      this.latestLiveBar = next;
+      this.latestLiveAt = Date.now();
       return next;
     }
     if (open < last.time) return null;
     const bar: Bar = { time: open, open: price, high: price, low: price, close: price, volume: v };
     this.bars.push(bar);
+    this.latestLiveBar = bar;
+    this.latestLiveAt = Date.now();
     return bar;
+  }
+
+  /**
+   * Keep a recently tick-updated forming candle when MT5 returns an older snapshot.
+   * History still reconciles the candle after live ticks stop, and real gaps remain
+   * intact because this only preserves the candle at its original timestamp.
+   */
+  private mergeHistory(rows: Bar[]): void {
+    this.bars = mergeSorted(this.bars, rows);
+    const liveBar = this.latestLiveBar;
+    const newestHistoryTime = rows.length ? rows[rows.length - 1].time : 0;
+    const liveIsFresh = Date.now() - this.latestLiveAt <= 15_000;
+    if (!liveBar || !liveIsFresh || newestHistoryTime > liveBar.time) return;
+
+    const index = this.bars.findIndex((bar) => bar.time === liveBar.time);
+    if (index >= 0) {
+      this.bars[index] = liveBar;
+      return;
+    }
+    const insertAt = this.countAtOrBefore(liveBar.time);
+    this.bars.splice(insertAt, 0, liveBar);
   }
 }
 
@@ -406,6 +434,7 @@ export class Mt5VelaProvider implements DataProvider {
   private readonly throttleMs: number;
   private readonly symbols: SymbolDescriptor[];
   private lastReport = { message: "", at: 0 };
+  private readonly serverClockOffsets: number[] = [];
   private disposed = false;
 
   constructor(private readonly options: Mt5VelaProviderOptions = {}) {
@@ -425,6 +454,13 @@ export class Mt5VelaProvider implements DataProvider {
       supportedTimeframes: ["1", "2", "3", "4", "5", "6", "10", "12", "15", "20", "30", "60", "120", "180", "240", "360", "480", "720", "D", "W", "M"],
       capabilities: { enumerate: true, stream: true, symbolInfo: true },
     };
+  }
+
+  /** Current MT5 server-clock epoch, used only by the chart's candle countdown. */
+  chartNow(): number {
+    if (this.serverClockOffsets.length === 0) return Date.now();
+    const sorted = [...this.serverClockOffsets].sort((a, b) => a - b);
+    return Date.now() + sorted[Math.floor(sorted.length / 2)];
   }
 
   async getBars(ticker: string, timeframe: string, range: BarRange = {}): Promise<OHLCV[]> {
@@ -588,6 +624,13 @@ export class Mt5VelaProvider implements DataProvider {
 
   /** A tick updates EVERY loaded timeframe of that symbol, so request.security() HTF data stays live too. */
   private onTick(state: SymbolState, tick: Tick): void {
+    const offset = tick.t - Date.now();
+    // MT5 server clocks are normally within one day of UTC. Ignore bad timestamps,
+    // then use the median of recent ticks to smooth out network/clock jitter.
+    if (Number.isFinite(offset) && Math.abs(offset) <= 24 * 60 * 60 * 1_000) {
+      this.serverClockOffsets.push(offset);
+      if (this.serverClockOffsets.length > SERVER_CLOCK_SAMPLE_COUNT) this.serverClockOffsets.shift();
+    }
     for (const series of state.series.values()) {
       if (series.applyTick(tick.p, tick.t, tick.v)) this.fanOut(state, series);
     }
