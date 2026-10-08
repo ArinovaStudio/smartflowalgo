@@ -38,7 +38,7 @@ export default function ChartView() {
                 </div>
             )}
             <div className="flex-1 w-full h-full min-h-0 overflow-hidden">
-                <TradingViewWidget symbol="XAUUSD" interval="1m" theme={theme} activeIndicators={activeIndicatorsList} />
+                <TradingViewWidget symbol="XAUUSD" interval="1m" theme={"light"} activeIndicators={activeIndicatorsList} />
             </div>
         </div>
     );

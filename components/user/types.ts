@@ -1,5 +1,13 @@
 import type React from "react";
-import type { CandleData } from "@/lib/transpiler";
+
+export interface CandleData {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+}
 
 /** A single user-created drawing/annotation on the chart overlay. */
 export interface DrawingItem {
@@ -112,5 +120,3 @@ export interface PortalUser {
   renualDate?: string | null;
   plan?: { id: string; name: string; badge: string | null; price?: number | null } | null;
 }
-
-export type { CandleData };
