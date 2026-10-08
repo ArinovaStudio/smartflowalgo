@@ -12,9 +12,12 @@ import { spawn } from "child_process";
 import { readFileSync, existsSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { patchVelaCountdown } from "./patch-vela-countdown-clock.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
+
+await patchVelaCountdown();
 
 // ── Load .env manually (dotenv-style, no extra dependency needed) ─────────────
 function loadEnvFile(filePath) {
