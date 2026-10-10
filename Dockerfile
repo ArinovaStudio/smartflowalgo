@@ -13,8 +13,10 @@ ENV NODE_OPTIONS="--no-network-family-autoselection"
 FROM base AS deps
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
-COPY prisma ./prisma/
+# The lockfile contains the root package as a local `file:.` dependency. Copy
+# the application files before npm ci so that dependency can be resolved in
+# this layer. .dockerignore keeps host node_modules and build output out.
+COPY . .
 
 RUN npm ci --legacy-peer-deps
 
