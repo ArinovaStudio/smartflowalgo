@@ -546,8 +546,10 @@ export class Mt5VelaProvider implements DataProvider {
     }
     const d = digits ?? guessDigits(upper);
 
-    return {
+    const info = {
       ticker: symbol,
+      tickerid: `MT5:${symbol}`,
+      main_tickerid: `MT5:${symbol}`,
       name: descriptor?.description ?? symbol,
       description: descriptor?.description ?? symbol,
       type: descriptor?.type ?? "forex",
@@ -561,7 +563,10 @@ export class Mt5VelaProvider implements DataProvider {
       pointvalue: 1,
       currency: symbol.length >= 6 ? symbol.slice(-3) : "USD",
       basecurrency: symbol.length >= 6 ? symbol.slice(0, 3) : symbol,
-    };
+    } as SymbolInfo;
+
+    console.log("[MT5 DBG] getSymbolInfo", { ticker, info });
+    return info;
   }
 
   /**
