@@ -51,16 +51,27 @@ const port = process.env.PORT || envVars["PORT"] || "3000";
 
 console.log(`\n🚀 Starting Next.js dev server on port ${port} ...\n`);
 
+const nextBin = path.join(rootDir, "node_modules", "next", "dist", "bin", "next");
+if (!existsSync(nextBin)) {
+  console.error("Next.js is missing from node_modules. Run `npm ci --legacy-peer-deps` and try again.");
+  process.exit(1);
+}
+
 const next = spawn(
-  "npx",
-  ["next", "dev", "--port", port, "--hostname", "0.0.0.0"],
+  process.execPath,
+  [nextBin, "dev", "--port", port, "--hostname", "0.0.0.0"],
   {
     cwd: rootDir,
     stdio: "inherit",
-    shell: true,
+    shell: false,
     env: { ...process.env, PORT: port },
   }
 );
+
+next.on("error", (error) => {
+  console.error(`Failed to start Next.js: ${error.message}`);
+  process.exitCode = 1;
+});
 
 next.on("close", (code) => {
   process.exit(code ?? 0);
