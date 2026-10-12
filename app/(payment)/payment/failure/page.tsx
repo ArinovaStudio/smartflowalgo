@@ -96,7 +96,7 @@ export default function PaymentFailedPage() {
         </h1>
 
         <p className="mt-5 text-center leading-7 text-neutral-400">
-          Unfortunately, we couldn't verify your payment.
+          Unfortunately, we couldn&apos;t verify your payment.
           <br />
           If you believe the payment was successful or money was deducted,
           please report it to our Telegram support with your payment screenshot.

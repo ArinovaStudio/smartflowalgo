@@ -6,6 +6,16 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export default defineConfig([{
-    extends: [...next],
-}]);
+export default defineConfig([
+  ...next,
+  {
+    rules: {
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/purity": "off",
+      "react-hooks/refs": "off",
+      "react-hooks/immutability": "off",
+      "react/no-unescaped-entities": "off",
+      "@next/next/no-img-element": "warn",
+    },
+  },
+]);

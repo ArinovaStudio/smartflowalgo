@@ -70,8 +70,21 @@ const Terminal = () => {
         getIndicators();
     }, []);
 
-    const handleLaunchChart = (ind: Indicator) => {
-        router.push(`/admin/terminal/chart?indicator=${encodeURIComponent(ind.id)}`);
+    const handleLaunchChart = async (ind: Indicator) => {
+        try {
+            const res = await fetch("/api/admin/indicator-token", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ indicatorId: ind.id }),
+            });
+            const data = await res.json();
+            if (!data.success || !data.token) throw new Error("Token error");
+            router.push(`/admin/terminal/chart?token=${encodeURIComponent(data.token)}`);
+        } catch {
+            // Fallback: if encryption fails just navigate without exposing id (redirect to terminal)
+            router.push("/admin/terminal");
+        }
     };
 
     return (

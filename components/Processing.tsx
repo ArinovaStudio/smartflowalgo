@@ -99,7 +99,7 @@ return (
         </h1>
 
         <p className="mt-4 text-center text-slate-600 dark:text-slate-300">
-          Please don't close this page. We're securely verifying your payment
+          Please don&apos;t close this page. We&apos;re securely verifying your payment
           with our payment provider.
         </p>
 

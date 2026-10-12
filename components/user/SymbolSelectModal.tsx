@@ -319,7 +319,7 @@ function SymbolSelectModalComponent({
             <div className="p-8 text-center text-xs text-slate-500 dark:text-[#787b86]">
               <Search className="h-8 w-8 mx-auto text-slate-400 mb-2 opacity-40" />
               <p className="font-semibold text-sm">
-                No symbols matching "{searchQuery}"
+                No symbols matching &quot;{searchQuery}&quot;
               </p>
             </div>
           )}
