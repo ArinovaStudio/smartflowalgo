@@ -91,13 +91,13 @@ const Terminal = () => {
         <div className="w-full min-h-[80%] flex flex-col space-y-4">
             <div className="space-y-6">
                 {/* Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
                     <div>
-                        <h2 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2.5">
+                        <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
                             <Sparkles className="h-6 w-6 text-sky-500" />
                             <span>My Unlocked Indicators ({indicators.length})</span>
                         </h2>
-                        <p className="text-xs text-slate-400 mt-1">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
                             Proprietary algorithmic indicators repository. Click Launch Chart to open the live TradingView terminal with candles and indicators.
                         </p>
                     </div>
@@ -109,8 +109,24 @@ const Terminal = () => {
                         {[1, 2, 3].map((n) => (
                             <div
                                 key={n}
-                                className="h-48 rounded-2xl border border-slate-800 bg-slate-900/50 animate-pulse"
-                            />
+                                aria-hidden="true"
+                                className="min-h-44 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 p-5 shadow-sm"
+                            >
+                                <div className="flex items-start justify-between gap-3 animate-pulse">
+                                    <div className="flex min-w-0 items-center gap-3">
+                                        <div className="h-11 w-11 shrink-0 rounded-xl bg-slate-200 dark:bg-slate-800" />
+                                        <div className="space-y-2">
+                                            <div className="h-3.5 w-32 rounded bg-slate-200 dark:bg-slate-800" />
+                                            <div className="h-2.5 w-24 rounded bg-slate-100 dark:bg-slate-800/70" />
+                                        </div>
+                                    </div>
+                                    <div className="h-5 w-12 rounded-full bg-slate-100 dark:bg-slate-800" />
+                                </div>
+                                <div className="mt-5 h-3 w-4/5 rounded bg-slate-100 dark:bg-slate-800/70 animate-pulse" />
+                                <div className="mt-5 border-t border-slate-200 dark:border-slate-800 pt-4">
+                                    <div className="h-10 rounded-xl bg-sky-100 dark:bg-sky-500/20 animate-pulse" />
+                                </div>
+                            </div>
                         ))}
                     </div>
                 ) : indicators.length > 0 ? (
@@ -119,7 +135,7 @@ const Terminal = () => {
                             return (
                                 <div
                                     key={ind.id}
-                                    className="rounded-2xl border transition-all p-5 flex flex-col justify-between border-slate-800 bg-slate-900/80 hover:border-sky-500/40"
+                                    className="rounded-2xl border transition-all p-5 flex flex-col justify-between border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 shadow-sm hover:border-sky-400 dark:hover:border-sky-500/50 hover:shadow-md dark:hover:shadow-none"
                                 >
                                     <div className="space-y-3">
                                         <div className="flex items-start justify-between gap-3">
@@ -128,10 +144,10 @@ const Terminal = () => {
                                                     <LineChart className="h-5 w-5" />
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <h4 className="font-bold text-sm text-white truncate">
+                                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white truncate">
                                                         {ind.name}
                                                     </h4>
-                                                    <p className="text-[11px] text-slate-400 mt-0.5">
+                                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                                                         Version:{" "}
                                                         <span className="font-mono font-semibold text-sky-400">
                                                             {ind.currentVersion || ind.latestVersion?.version || "v1.0.0"}
@@ -140,31 +156,31 @@ const Terminal = () => {
                                                 </div>
                                             </div>
 
-                                            <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px] font-semibold shrink-0">
+                                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-slate-800 text-emerald-700 dark:text-slate-400 text-[10px] font-semibold shrink-0">
                                                 Ready
                                             </span>
                                         </div>
 
                                         {ind.description && (
-                                            <p className="text-xs text-slate-400 line-clamp-2">
+                                            <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2">
                                                 {ind.description}
                                             </p>
                                         )}
 
                                         {(ind.market || ind.timeframe || ind.symbol) && (
-                                            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                                            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
                                                 {ind.symbol && (
-                                                    <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700/60 font-mono text-sky-400">
+                                                    <span className="px-2 py-0.5 rounded bg-sky-50 dark:bg-slate-800 border border-sky-100 dark:border-slate-700/60 font-mono text-sky-700 dark:text-sky-400">
                                                         {ind.symbol}
                                                     </span>
                                                 )}
                                                 {ind.market && (
-                                                    <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700/60">
+                                                    <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60">
                                                         {ind.market}
                                                     </span>
                                                 )}
                                                 {ind.timeframe && (
-                                                    <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700/60">
+                                                    <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60">
                                                         {ind.timeframe}
                                                     </span>
                                                 )}
@@ -173,7 +189,7 @@ const Terminal = () => {
                                     </div>
 
                                     {/* Action Button: Launch Chart button */}
-                                    <div className="pt-4 mt-4 border-t border-slate-800/80 flex items-center">
+                                    <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800/80 flex items-center">
                                         <button
                                             type="button"
                                             onClick={() => handleLaunchChart(ind)}
@@ -188,14 +204,14 @@ const Terminal = () => {
                         })}
                     </div>
                 ) : (
-                    <div className="rounded-3xl border border-dashed border-slate-800 p-12 text-center space-y-3 bg-slate-900/40">
+                    <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center space-y-3 bg-white dark:bg-slate-900/40">
                         <div className="h-12 w-12 rounded-2xl bg-sky-500/10 text-sky-500 flex items-center justify-center mx-auto">
                             <Sparkles className="h-6 w-6" />
                         </div>
-                        <h4 className="text-base font-bold text-white">
+                        <h4 className="text-base font-bold text-slate-900 dark:text-white">
                             No Indicators Available
                         </h4>
-                        <p className="text-xs text-slate-400 max-w-md mx-auto">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md mx-auto">
                             No indicators found in the database. Please create or configure indicators in the admin panel.
                         </p>
                     </div>

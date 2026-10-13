@@ -98,6 +98,82 @@ const EMPTY_FORM: FormState = {
 const inputCls =
   "w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500/30 transition-all";
 
+type ScriptDiagnostic = { line: number; message: string; severity: "error" | "warning" };
+type TimeframeFinding = { line: number; value: string; suggestions: string[]; start: number; end: number };
+type PineCheckState = { status: "idle" | "checking" | "passed" | "failed"; message: string; line?: number };
+
+const SUPPORTED_TIMEFRAMES = [
+  { value: "1", minutes: 1 }, { value: "2", minutes: 2 }, { value: "3", minutes: 3 },
+  { value: "4", minutes: 4 }, { value: "5", minutes: 5 }, { value: "6", minutes: 6 },
+  { value: "10", minutes: 10 }, { value: "12", minutes: 12 }, { value: "15", minutes: 15 },
+  { value: "30", minutes: 30 }, { value: "60", minutes: 60 }, { value: "120", minutes: 120 },
+  { value: "180", minutes: 180 }, { value: "240", minutes: 240 }, { value: "360", minutes: 360 },
+  { value: "480", minutes: 480 }, { value: "720", minutes: 720 }, { value: "1D", minutes: 1440 },
+  { value: "1W", minutes: 10080 }, { value: "1M", minutes: 43200 },
+];
+
+function verifyPineScript(source: string) {
+  const diagnostics: ScriptDiagnostic[] = [];
+  const timeframes: TimeframeFinding[] = [];
+  if (!source.trim()) return { diagnostics, timeframes };
+
+  const lines = source.split(/\r?\n/);
+  if (!lines.some((line) => /^\s*\/\/@version\s*=\s*\d+/i.test(line))) {
+    diagnostics.push({ line: 1, severity: "error", message: "Missing Pine version directive (for example, //@version=6)." });
+  }
+  if (!/\b(?:indicator|strategy|library)\s*\(/.test(source)) {
+    diagnostics.push({ line: 1, severity: "error", message: "Missing indicator(), strategy(), or library() declaration." });
+  }
+
+  const sanitized = source.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, "\"\"")
+    .split(/\r?\n/).map((line) => line.replace(/\/\/.*$/, "")).join("\n");
+  const stack: Array<{ char: string; line: number }> = [];
+  let lineNumber = 1;
+  for (const char of sanitized) {
+    if (char === "\n") { lineNumber += 1; continue; }
+    if (char === "(" || char === "[" || char === "{") stack.push({ char, line: lineNumber });
+    if (char === ")" || char === "]" || char === "}") {
+      const expected = char === ")" ? "(" : char === "]" ? "[" : "{";
+      const last = stack.pop();
+      if (!last || last.char !== expected) diagnostics.push({ line: lineNumber, severity: "error", message: `Unexpected closing delimiter "${char}".` });
+    }
+  }
+  for (const open of stack) diagnostics.push({ line: open.line, severity: "error", message: `Unclosed delimiter "${open.char}".` });
+
+  const securityPattern = /\b(?:request\s*\.\s*)?security\s*\(\s*[^,]+,\s*(?:(["'])([^"']+)\1|([A-Za-z_]\w*))/g;
+  let match: RegExpExecArray | null;
+  while ((match = securityPattern.exec(source))) {
+    let raw = (match[2] ?? "").trim();
+    let valueStart = -1;
+    if (!raw && match[3]) {
+      const variable = match[3].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const assignment = new RegExp(`\\b${variable}\\s*=\\s*(['"])([^'"]+)\\1`).exec(source);
+      raw = assignment?.[2]?.trim() ?? "";
+      if (!raw) continue; // Dynamic timeframe expressions cannot be statically classified.
+      valueStart = assignment!.index + assignment![0].lastIndexOf(assignment![2]);
+    } else {
+      const quotedValue = `${match[1]}${match[2]}${match[1]}`;
+      valueStart = match.index + match[0].lastIndexOf(quotedValue) + 1;
+    }
+    const line = source.slice(0, valueStart).split(/\r?\n/).length;
+    const normalized = raw.toUpperCase();
+    if (SUPPORTED_TIMEFRAMES.some((item) => item.value === normalized)) continue;
+    const minutes = /^\d+$/.test(raw) ? Number(raw) :
+      /^\d+S$/i.test(raw) ? Number(raw.slice(0, -1)) / 60 :
+      /^\d+D$/i.test(raw) ? Number(raw.slice(0, -1)) * 1440 :
+      /^\d+W$/i.test(raw) ? Number(raw.slice(0, -1)) * 10080 :
+      /^\d+M$/i.test(raw) ? Number(raw.slice(0, -1)) * 43200 : NaN;
+    if (!Number.isFinite(minutes)) {
+      timeframes.push({ line, value: raw, suggestions: [], start: valueStart, end: valueStart + raw.length });
+      continue;
+    }
+    const closest = [...SUPPORTED_TIMEFRAMES].sort((a, b) => Math.abs(a.minutes - minutes) - Math.abs(b.minutes - minutes));
+    const distance = Math.abs(closest[0].minutes - minutes);
+    timeframes.push({ line, value: raw, suggestions: closest.filter((item) => Math.abs(item.minutes - minutes) === distance).slice(0, 2).map((item) => item.value), start: valueStart, end: valueStart + raw.length });
+  }
+  return { diagnostics, timeframes };
+}
+
 export default function ScriptIndicatorManagement() {
   const [indicators, setIndicators] = useState<ScriptIndicatorItem[]>([]);
   const [availablePlans, setAvailablePlans] = useState<Array<{ id: string; name: string }>>([]);
@@ -131,6 +207,12 @@ export default function ScriptIndicatorManagement() {
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [pineCheck, setPineCheck] = useState<PineCheckState>({ status: "idle", message: "" });
+  const pineCheckRunRef = useRef(0);
+  const scriptEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const lineGutterRef = useRef<HTMLDivElement | null>(null);
+  const lastAutoJumpRef = useRef<string | null>(null);
+  const [activeScriptLine, setActiveScriptLine] = useState<number | null>(null);
 
   // Quick View / Copy Code Modal
   const [viewingScript, setViewingScript] = useState<{
@@ -238,6 +320,29 @@ export default function ScriptIndicatorManagement() {
     });
   }
 
+  function goToScriptLine(line: number) {
+    const editor = scriptEditorRef.current;
+    if (!editor || !Number.isFinite(line)) return;
+    const targetLine = Math.max(1, Math.min(line, form.scriptCode.split("\n").length));
+    const offset = form.scriptCode.split("\n").slice(0, targetLine - 1).reduce((total, item) => total + item.length + 1, 0);
+    editor.focus();
+    editor.setSelectionRange(offset, offset);
+    setActiveScriptLine(targetLine);
+    requestAnimationFrame(() => {
+      if (lineGutterRef.current) lineGutterRef.current.scrollTop = editor.scrollTop;
+    });
+  }
+
+  function applyTimeframeSuggestion(finding: TimeframeFinding, suggestion: string) {
+    setForm((previous) => {
+      if (previous.scriptCode.slice(finding.start, finding.end) !== finding.value) return previous;
+      return {
+        ...previous,
+        scriptCode: previous.scriptCode.slice(0, finding.start) + suggestion + previous.scriptCode.slice(finding.end),
+      };
+    });
+  }
+
   function handleDownloadCode(name: string, version: string, code: string) {
     if (!code) return;
     const element = document.createElement("a");
@@ -256,6 +361,7 @@ export default function ScriptIndicatorManagement() {
     setCodeSourceMode("EDITOR");
     setUploadedFileName(null);
     setFormError(null);
+    setPineCheck({ status: "idle", message: "" });
     setFormModalOpen(true);
   }
 
@@ -273,6 +379,7 @@ export default function ScriptIndicatorManagement() {
     setCodeSourceMode("EDITOR");
     setUploadedFileName(null);
     setFormError(null);
+    setPineCheck({ status: "idle", message: "" });
     setFormModalOpen(true);
   }
 
@@ -288,6 +395,7 @@ export default function ScriptIndicatorManagement() {
 
     setUploadedFileName(file.name);
     setFormError(null);
+    setPineCheck({ status: "checking", message: "PineTS is checking the uploaded script…" });
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -318,6 +426,15 @@ export default function ScriptIndicatorManagement() {
 
     if (!form.scriptCode.trim()) {
       setFormError("Please upload a text file or enter Pine Script code");
+      return;
+    }
+
+    if (pineCheck.status === "checking" || pineCheck.status === "idle") {
+      setFormError("Wait for the PineTS script check to finish before saving.");
+      return;
+    }
+    if (pineCheck.status === "failed") {
+      setFormError(`PineTS could not run this script: ${pineCheck.message}`);
       return;
     }
 
@@ -405,6 +522,96 @@ export default function ScriptIndicatorManagement() {
 
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const rangeEnd = Math.min(page * pageSize, total);
+  const scriptVerification = verifyPineScript(form.scriptCode);
+
+  useEffect(() => {
+    if (!formModalOpen || !form.scriptCode.trim()) {
+      setPineCheck({ status: "idle", message: "" });
+      return;
+    }
+
+    const runId = ++pineCheckRunRef.current;
+    let session: { stop: () => void } | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let cancelled = false;
+    setPineCheck({ status: "checking", message: "Waiting for code edits to finish…" });
+
+    const runCheck = async () => {
+      try {
+        const { PineEngine } = await import("@luxalgo/vela-pinets");
+        const engine = new PineEngine();
+        const prepared = await engine.prepare(form.scriptCode, `admin-verifier-${runId}`);
+        const now = Date.now();
+        const bars = Array.from({ length: 250 }, (_, index) => {
+          const close = 1.08 + Math.sin(index / 8) * 0.006 + index * 0.00001;
+          return {
+            time: now - (250 - index) * 5 * 60_000,
+            open: close - 0.0004,
+            high: close + 0.001,
+            low: close - 0.001,
+            close,
+            volume: 1000 + index * 3,
+          };
+        });
+
+        await new Promise<void>((resolve, reject) => {
+          let settled = false;
+          const finish = (error?: Error) => {
+            if (settled) return;
+            settled = true;
+            if (timeout) clearTimeout(timeout);
+            if (error) reject(error); else resolve();
+          };
+          timeout = setTimeout(() => {
+            session?.stop();
+            finish(new Error("PineTS check timed out after 20 seconds."));
+          }, 20_000);
+          session = engine.execute({
+            prepared,
+            market: { symbol: "EURUSD", timeframe: "5m" },
+            bars,
+            mode: "static",
+          }, {
+            onModel: () => undefined,
+            onDone: () => finish(),
+            onError: (error) => finish(error),
+          });
+        });
+
+        if (!cancelled && pineCheckRunRef.current === runId) {
+          setPineCheck({ status: "passed", message: "PineTS prepared and executed this script on sample bars." });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown PineTS error.";
+        const line = /\bline\s+(\d+)\b/i.exec(message)?.[1];
+        if (!cancelled && pineCheckRunRef.current === runId) setPineCheck({ status: "failed", message, line: line ? Number(line) : undefined });
+      }
+    };
+
+    const debounce = setTimeout(() => {
+      setPineCheck({ status: "checking", message: "Preparing and running with PineTS…" });
+      void runCheck();
+    }, 800);
+    return () => {
+      cancelled = true;
+      clearTimeout(debounce);
+      if (timeout) clearTimeout(timeout);
+      session?.stop();
+    };
+  }, [form.scriptCode, formModalOpen]);
+
+  const firstIssueLine = pineCheck.status === "failed" ? pineCheck.line : undefined;
+  const firstTimeframeLine = scriptVerification.timeframes[0]?.line;
+  const autoJumpLine = firstIssueLine ?? firstTimeframeLine;
+  useEffect(() => {
+    if (!formModalOpen || !autoJumpLine) return;
+    const issueKey = `${form.scriptCode.length}:${pineCheck.status}:${autoJumpLine}`;
+    if (lastAutoJumpRef.current === issueKey) return;
+    lastAutoJumpRef.current = issueKey;
+    goToScriptLine(autoJumpLine);
+    // Jump once when the verifier reports a new issue; later issues stay clickable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoJumpLine, formModalOpen, form.scriptCode.length, pineCheck.status]);
 
   return (
     <div className="space-y-6">
@@ -1095,19 +1302,81 @@ export default function ScriptIndicatorManagement() {
                       )}
                     </div>
 
-                    <textarea
-                      rows={8}
-                      required
-                      value={form.scriptCode}
-                      onChange={(e) => setForm({ ...form, scriptCode: e.target.value })}
-                      placeholder={`//@version=5\nindicator("My Indicator", overlay=true)\n\n// Write or paste Pine Script (Pioneer) code here...`}
-                      className="no-scrollbar w-full min-h-[160px] resize-y overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-mono text-xs p-3.5 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500/30 transition-colors"
-                      style={{
-                        scrollbarWidth: "none",
-                        msOverflowStyle: "none",
-                        resize: "vertical",
-                      }}
-                    />
+                    <div className="flex h-64 min-h-[160px] resize-y overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500/30">
+                      <div
+                        ref={lineGutterRef}
+                        aria-hidden="true"
+                        className="w-12 shrink-0 overflow-hidden border-r border-slate-200 dark:border-slate-800 bg-slate-200/60 dark:bg-slate-950/60 px-2 py-3.5 text-right font-mono text-xs leading-5 text-slate-400 select-none"
+                      >
+                        {form.scriptCode.split("\n").map((_, index) => {
+                          const line = index + 1;
+                          const isIssueLine = line === firstIssueLine || scriptVerification.timeframes.some((item) => item.line === line);
+                          return (
+                            <button
+                              key={line}
+                              type="button"
+                              tabIndex={-1}
+                              onClick={() => goToScriptLine(line)}
+                              className={`block w-full leading-5 hover:text-sky-500 ${isIssueLine ? "font-bold text-amber-500" : ""} ${activeScriptLine === line ? "text-sky-500" : ""}`}
+                              title={`Go to line ${line}`}
+                            >{line}</button>
+                          );
+                        })}
+                      </div>
+                      <textarea
+                        ref={scriptEditorRef}
+                        required
+                        value={form.scriptCode}
+                        onChange={(e) => {
+                          setActiveScriptLine(null);
+                          setForm({ ...form, scriptCode: e.target.value });
+                        }}
+                        onScroll={(e) => {
+                          if (lineGutterRef.current) lineGutterRef.current.scrollTop = e.currentTarget.scrollTop;
+                        }}
+                        placeholder={`//@version=5\nindicator("My Indicator", overlay=true)\n\n// Write or paste Pine Script code here...`}
+                        spellCheck={false}
+                        wrap="off"
+                        className="no-scrollbar h-full min-h-full min-w-0 flex-1 resize-none overflow-auto border-0 bg-transparent p-3.5 font-mono text-xs leading-5 text-slate-800 dark:text-slate-200 focus:outline-none"
+                        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+                      />
+                    </div>
+                    {form.scriptCode.trim() && (
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-950/50 p-3 space-y-2" aria-live="polite">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                          {pineCheck.status === "passed" ? <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                            : pineCheck.status === "failed" ? <AlertCircle className="h-4 w-4 text-red-500" />
+                              : <Loader2 className="h-4 w-4 animate-spin text-sky-500" />}
+                          PineTS verification
+                          <span className="font-normal text-slate-400">(same engine as the chart, sample data)</span>
+                        </div>
+                        {pineCheck.message && (
+                          <p className={`text-xs ${pineCheck.status === "failed" ? "text-red-500" : "text-slate-500 dark:text-slate-400"}`}>
+                            {pineCheck.line ? <button type="button" onClick={() => goToScriptLine(pineCheck.line!)} className="font-semibold underline underline-offset-2">Line {pineCheck.line}:</button> : null}
+                            {pineCheck.line ? ` ${pineCheck.message}` : pineCheck.message}
+                          </p>
+                        )}
+                        {scriptVerification.timeframes.map((item, index) => (
+                          <div key={`timeframe-${index}`} className="flex flex-wrap items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+                            <span>
+                              <button type="button" onClick={() => goToScriptLine(item.line)} className="font-semibold underline underline-offset-2">Line {item.line}:</button>{" "}
+                              timeframe “{item.value}” is unsupported. {item.suggestions.length > 0 ? "Use:" : "Choose a supported minute, daily, weekly, or monthly timeframe."}
+                            </span>
+                            {item.suggestions.map((suggestion) => (
+                              <button
+                                key={suggestion}
+                                type="button"
+                                onClick={() => applyTimeframeSuggestion(item, suggestion)}
+                                className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 font-semibold text-amber-700 hover:bg-amber-500/20 dark:text-amber-300"
+                                title={`Replace only this timeframe value with ${suggestion}`}
+                              >{suggestion}</button>
+                            ))}
+                          </div>
+                        ))}
+                        {scriptVerification.timeframes.length === 0 && <p className="text-xs text-slate-500 dark:text-slate-400">No unsupported literal request.security timeframes found.</p>}
+                        {/* <p className="text-[10px] text-slate-400">A successful sample run does not guarantee identical results on live chart data or TradingView.</p> */}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1188,7 +1457,7 @@ export default function ScriptIndicatorManagement() {
                   <button
                     type="button"
                     onClick={() => setFormModalOpen(false)}
-                    disabled={submitting}
+                    disabled={submitting || pineCheck.status === "checking" || pineCheck.status === "idle" || pineCheck.status === "failed"}
                     className="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
                   >
                     Cancel
