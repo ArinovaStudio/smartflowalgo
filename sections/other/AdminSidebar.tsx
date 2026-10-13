@@ -20,6 +20,7 @@ import {
   UserCog,
   LineChart,
   FileCode,
+  Newspaper,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
 
@@ -31,7 +32,7 @@ const NAV_ITEMS = [
   { label: "Promoters", href: "/admin/promoters", icon: Megaphone },
   { label: "Plans & Subscriptions", href: "/admin/plans", icon: CreditCard },
   { label: "Live Terminal", href: "/admin/terminal", icon: LineChart },
-  { label: "News", href: "/news", icon: LineChart },
+  { label: "News", href: "/news", icon: Newspaper },
 ];
 
 const SIDEBAR_KEY = "admin-sidebar-collapsed";
