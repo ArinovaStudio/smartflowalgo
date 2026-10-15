@@ -6,6 +6,7 @@ import { MT5_ALIAS_PREFIXES, Mt5VelaProvider } from "./Mt5VelaProvider";
 import { toVelaTimeframe } from "./mt5Timeframes";
 import type { LightweightChartWidgetProps } from "./types";
 import { registerRendererDefaults } from "@luxalgo/vela/plugin";
+import { runPostProcessedPineScript } from "./pinePostProcessor";
 
 export type { DrawingItem, IndicatorMeta } from "./types";
 
@@ -340,7 +341,7 @@ export default function LightweightChartWidget({
       };
       const stillWanted = () => wantedRef.current.get(indicator.key)?.source === indicator.source;
 
-      void chart.runIndicator(indicator.source, { id, title: indicator.name }).then((result: any) => {
+      void runPostProcessedPineScript(chart, indicator.source, { id, title: indicator.name }).then((result: any) => {
         settle();
         const handle = result?.handle;
         if (!result?.ok || !handle) {
