@@ -6,7 +6,7 @@ import { MT5_ALIAS_PREFIXES, Mt5VelaProvider } from "./Mt5VelaProvider";
 import { toVelaTimeframe } from "./mt5Timeframes";
 import type { LightweightChartWidgetProps } from "./types";
 import { registerRendererDefaults } from "@luxalgo/vela/plugin";
-import { runPostProcessedPineScript } from "./pinePostProcessor";
+import { runPostProcessedPineScript } from "./pine-fix";
 
 export type { DrawingItem, IndicatorMeta } from "./types";
 
