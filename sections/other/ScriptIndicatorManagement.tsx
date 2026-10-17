@@ -211,7 +211,6 @@ export default function ScriptIndicatorManagement() {
   const pineCheckRunRef = useRef(0);
   const scriptEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const lineGutterRef = useRef<HTMLDivElement | null>(null);
-  const lastAutoJumpRef = useRef<string | null>(null);
   const [activeScriptLine, setActiveScriptLine] = useState<number | null>(null);
 
   // Quick View / Copy Code Modal
@@ -602,16 +601,6 @@ export default function ScriptIndicatorManagement() {
 
   const firstIssueLine = pineCheck.status === "failed" ? pineCheck.line : undefined;
   const firstTimeframeLine = scriptVerification.timeframes[0]?.line;
-  const autoJumpLine = firstIssueLine ?? firstTimeframeLine;
-  useEffect(() => {
-    if (!formModalOpen || !autoJumpLine) return;
-    const issueKey = `${form.scriptCode.length}:${pineCheck.status}:${autoJumpLine}`;
-    if (lastAutoJumpRef.current === issueKey) return;
-    lastAutoJumpRef.current = issueKey;
-    goToScriptLine(autoJumpLine);
-    // Jump once when the verifier reports a new issue; later issues stay clickable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoJumpLine, formModalOpen, form.scriptCode.length, pineCheck.status]);
 
   return (
     <div className="space-y-6">
@@ -1329,7 +1318,7 @@ export default function ScriptIndicatorManagement() {
                         value={form.scriptCode}
                         onChange={(e) => {
                           setActiveScriptLine(null);
-                          setForm({ ...form, scriptCode: e.target.value });
+                          setForm((previous) => ({ ...previous, scriptCode: e.target.value }));
                         }}
                         onScroll={(e) => {
                           if (lineGutterRef.current) lineGutterRef.current.scrollTop = e.currentTarget.scrollTop;
