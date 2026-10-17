@@ -1,9 +1,11 @@
 import { solve } from './runner';
 import { ALL_FIXERS } from './fixers';
+import { normalizePineScript } from './normalizer';
 import type { SolveOptions } from './types';
 
 export { solve, toPineError } from './runner';
 export { ALL_FIXERS } from './fixers';
+export { normalizePineScript } from './normalizer';
 export type { Fixer, Candidate, PineError, SolveOptions, SolveSuccess } from './types';
 
 type Chart = {
@@ -21,6 +23,7 @@ export async function runPostProcessedPineScript(
   options: Record<string, unknown> | (() => Record<string, unknown>),
   extra: Partial<SolveOptions> = {},
 ) {
+  const normalized = normalizePineScript(source);
   const run = async (src: string) => {
     const opts = typeof options === 'function' ? options() : options; // fresh options per attempt if you pass a function
     const result = await chart.runIndicator(src, opts);
@@ -32,7 +35,7 @@ export async function runPostProcessedPineScript(
   };
 
   try {
-    const { result } = await solve(run, source, {
+    const { result } = await solve(run, normalized, {
       fixers: ALL_FIXERS,
       log: (m) => console.info(m),
       ...extra,

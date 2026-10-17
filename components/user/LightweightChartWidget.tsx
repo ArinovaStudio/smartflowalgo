@@ -6,7 +6,7 @@ import { MT5_ALIAS_PREFIXES, Mt5VelaProvider } from "./Mt5VelaProvider";
 import { toVelaTimeframe } from "./mt5Timeframes";
 import type { LightweightChartWidgetProps } from "./types";
 import { registerRendererDefaults } from "@luxalgo/vela/plugin";
-import { runPostProcessedPineScript } from "./pine-fix";
+import { normalizePineScript, runPostProcessedPineScript } from "./pine-fix";
 
 export type { DrawingItem, IndicatorMeta } from "./types";
 
@@ -104,18 +104,87 @@ function readableTextColor(textColor: string | undefined, backgroundColor: strin
   return blackContrast >= whiteContrast ? "#000000" : "#ffffff";
 }
 
+let drawingPatchApplied = false;
+function ensureDrawingPersistencePatch(ContextClass: any) {
+  if (drawingPatchApplied || !ContextClass?.prototype) return;
+  drawingPatchApplied = true;
+  const proto = ContextClass.prototype;
+  const orig = proto.bindContextObject;
+  if (typeof orig !== "function") return;
+  proto.bindContextObject = function(target: any, names: string[], ns: string) {
+    orig.call(this, target, names, ns);
+    if (!target) return;
+    const helperProto = Object.getPrototypeOf(target);
+    if (helperProto && !helperProto.__sfa_drawing_patched) {
+      helperProto.__sfa_drawing_patched = true;
+      if (ns === "box") {
+        const boxSetters = [
+          "set_left", "set_right", "set_top", "set_bottom",
+          "set_lefttop", "set_rightbottom", "set_bgcolor",
+          "set_border_color", "set_border_width", "set_border_style",
+          "set_extend", "set_text", "set_text_color", "set_text_size",
+          "set_text_halign", "set_text_valign", "set_text_wrap", "set_text_font_family"
+        ];
+        for (const s of boxSetters) {
+          const fn = helperProto[s];
+          if (typeof fn === "function") {
+            helperProto[s] = function(box: any, ...args: any[]) {
+              if (box && !box._deleted && Array.isArray(this._boxes) && !this._boxes.includes(box)) {
+                this._boxes.push(box);
+              }
+              return fn.call(this, box, ...args);
+            };
+          }
+        }
+      } else if (ns === "line") {
+        const lineSetters = [
+          "set_x1", "set_x2", "set_y1", "set_y2", "set_xy1", "set_xy2",
+          "set_color", "set_width", "set_style", "set_extend"
+        ];
+        for (const s of lineSetters) {
+          const fn = helperProto[s];
+          if (typeof fn === "function") {
+            helperProto[s] = function(line: any, ...args: any[]) {
+              if (line && !line._deleted && Array.isArray(this._lines) && !this._lines.includes(line)) {
+                this._lines.push(line);
+              }
+              return fn.call(this, line, ...args);
+            };
+          }
+        }
+      }
+    }
+  };
+}
+
 function createPineEngineWithFrontTables(
   PineEngine: new () => any,
   onTables: (ownerId: string, tables: any[]) => void,
 ): any {
   const engine = new PineEngine();
+  const lastBoxesByOwner = new Map<string, any[]>();
+  const lastLinesByOwner = new Map<string, any[]>();
+
   return {
     language: engine.language,
     capabilities: engine.capabilities,
-    prepare: (source: string, instanceId: string) => engine.prepare(source, instanceId),
+    prepare: (source: string, instanceId: string) => engine.prepare(normalizePineScript(source), instanceId),
     execute: (request: any, handlers: any) => engine.execute(request, {
       ...handlers,
       onModel: (model: any) => {
+        // Prevent drawing disappearance during streaming tick updates
+        if (Array.isArray(model.boxes) && model.boxes.length > 0) {
+          lastBoxesByOwner.set(model.id, model.boxes);
+        } else if ((!model.boxes || model.boxes.length === 0) && lastBoxesByOwner.has(model.id)) {
+          model.boxes = lastBoxesByOwner.get(model.id);
+        }
+
+        if (Array.isArray(model.lines) && model.lines.length > 0) {
+          lastLinesByOwner.set(model.id, model.lines);
+        } else if ((!model.lines || model.lines.length === 0) && lastLinesByOwner.has(model.id)) {
+          model.lines = lastLinesByOwner.get(model.id);
+        }
+
         const tables = model.tables?.map((table: any) => ({
           ...table,
           overlay: true,
@@ -184,10 +253,12 @@ export default function LightweightChartWidget({
 
     const boot = async () => {
       try {
-        const [{ VelaWorkspace }, { PineEngine }] = await Promise.all([
+        const [{ VelaWorkspace }, { PineEngine }, { Context }] = await Promise.all([
           import("@luxalgo/vela/workspace"),
           import("@luxalgo/vela-pinets"),
+          import("pinets"),
         ]);
+        ensureDrawingPersistencePatch(Context);
         if (cancelled || !hostRef.current) return;
 
         const provider = new Mt5VelaProvider({

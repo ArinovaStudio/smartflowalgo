@@ -5,7 +5,9 @@ import { PASSES, applyPasses } from '../passes/params-passes';
 export const paramsFixer: Fixer = {
   id: 'params',
 
-  matches: (e) => /\.?params\s*\[/.test(e.message),
+  matches: (e) =>
+    /\.?params\s*\[/i.test(e.message) ||
+    /evaluating\s*['"][^'"]*params/i.test(e.message),
 
   candidates(source): Candidate[] {
     const names = PASSES.map((p) => p.name);

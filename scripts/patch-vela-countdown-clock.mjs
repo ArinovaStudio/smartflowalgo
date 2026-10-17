@@ -2,6 +2,7 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { patchPinetsSecurity } from "./patch-pinets-security.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "node_modules", "@luxalgo", "vela", "dist");
@@ -84,6 +85,7 @@ export async function patchVelaCountdown() {
   }
 
   console.log(`[MT5 Countdown Patch] Successfully verified/patched ${patchedCount} file(s).`);
+  await patchPinetsSecurity();
   return patchedCount;
 }
 
