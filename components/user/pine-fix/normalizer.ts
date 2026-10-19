@@ -99,6 +99,18 @@ export function normalizeBareVwap(src: string): string {
 }
 
 /**
+ * PineTS can return NaN for `time_close()` during live executions. Derive the
+ * current timeframe close from its open time and Pine's timeframe duration.
+ */
+export function normalizeTimeClose(src: string): string {
+  const timeframeArg = /(?:[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*|'[^']*'|"[^"]*")/;
+  const withArg = new RegExp(`\\btime_close\\s*\\(\\s*(${timeframeArg.source})\\s*\\)`, 'g');
+  return src
+    .replace(withArg, '(time($1) + timeframe.in_seconds($1) * 1000)')
+    .replace(/\btime_close\s*\(\s*\)/g, '(time + timeframe.in_seconds() * 1000)');
+}
+
+/**
  * Enable opt-in dashboard/statistics inputs by default so their Pine table rows
  * are available in the shared chart UI.
  */
@@ -182,6 +194,7 @@ export function normalizePineScript(src: string): string {
   let result = src;
   result = enableDashboardInputs(result);
   result = normalizeBareVwap(result);
+  result = normalizeTimeClose(result);
   result = normalizeNullReceivers(result);
   result = normalizeMethodCalls(result);
   return result;
