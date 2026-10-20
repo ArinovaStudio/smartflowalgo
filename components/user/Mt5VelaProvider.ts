@@ -82,15 +82,15 @@ export interface Mt5VelaProviderOptions {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-function rangeBars(bars: Bar[], range: BarRange): Bar[] {
+function rangeBars(bars: Bar[], range: BarRange, clockNow?: number): Bar[] {
   let out = bars;
   if (range.from != null) {
     const from = range.from;
     out = out.filter((b) => b.time >= from);
   }
   if (range.to != null) {
-    const to = range.to;
-    out = out.filter((b) => b.time <= to);
+    const maxTo = Math.max(range.to, clockNow ?? 0);
+    out = out.filter((b) => b.time <= maxTo);
   }
   if (range.limit != null && range.limit > 0 && out.length > range.limit) out = out.slice(-range.limit);
   return out === bars ? bars.slice() : out;
@@ -206,7 +206,8 @@ class NativeSeries {
       if (!first || toMs < first.time) {
         // Nothing at or before `toMs` yet: the bridge only returns the NEWEST n bars,
         // so n must reach back past `toMs`. (Calendar time over-counts weekends; that is fine.)
-        count = Math.ceil((Date.now() - Math.min(toMs, Date.now())) / this.nativeMs) + need;
+        const effectiveNow = Math.max(Date.now(), toMs);
+        count = Math.ceil((effectiveNow - Math.min(toMs, effectiveNow)) / this.nativeMs) + need;
       } else {
         const have = this.countAtOrBefore(toMs);
         if (have >= need) return;
@@ -482,23 +483,25 @@ export class Mt5VelaProvider implements DataProvider {
       const plan = planTimeframe(timeframe);
       const series = this.seriesFor(cleanTicker(ticker), plan.native);
       const now = Date.now();
+      const chartClockNow = this.chartNow();
+      const effectiveNow = Math.max(now, chartClockNow);
 
       // How many target bars does this request need?
       let want: number;
       if (range.from != null) {
-        const end = Math.min(range.to ?? now, now);
-        const span = Math.max(0, Math.ceil((end - range.from) / plan.ms)) + 3;
-        want = range.limit != null ? Math.min(range.limit, span) : span;
+        const end = Math.max(range.to ?? effectiveNow, effectiveNow);
+        const span = Math.max(0, Math.ceil((end - range.from) / plan.ms)) + 10;
+        want = range.limit != null ? Math.max(range.limit, span) : span;
       } else {
         want = range.limit ?? DEFAULT_BARS;
       }
       want = Math.max(2, Math.floor(want));
 
       await series.ensure(want, plan.factor, range.to ?? Number.POSITIVE_INFINITY);
-      if (range.to == null || range.to >= now - plan.ms) await series.refreshIfStale(STALE_TAIL_MS);
+      if (range.to == null || range.to >= effectiveNow - plan.ms) await series.refreshIfStale(STALE_TAIL_MS);
 
       const bars = aggregateBars(series.bars, plan, !series.genesis);
-      return rangeBars(bars, range);
+      return rangeBars(bars, range, chartClockNow);
     } catch (error) {
       this.report(error);
       throw error;
@@ -556,7 +559,7 @@ export class Mt5VelaProvider implements DataProvider {
       prefix: "MT5",
       root: symbol,
       timezone: "Etc/UTC",
-      session: "24x7",
+      session: "0000-2400",
       mintick: 10 ** -d,
       pricescale: 10 ** d,
       minmove: 1,

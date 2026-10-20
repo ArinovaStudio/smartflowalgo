@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { MT5_ALIAS_PREFIXES, Mt5VelaProvider } from "./Mt5VelaProvider";
-import { planTimeframe, toVelaTimeframe } from "./mt5Timeframes";
+import { cleanTicker, planTimeframe, toVelaTimeframe } from "./mt5Timeframes";
 import type { LightweightChartWidgetProps } from "./types";
 import type { FetchSeries } from "@luxalgo/vela";
 import { registerRendererDefaults } from "@luxalgo/vela/plugin";
@@ -138,9 +138,7 @@ function ensureDrawingPersistencePatch(ContextClass: any) {
   if (typeof orig !== "function") return;
   proto.bindContextObject = function(target: any, names: string[], ns: string) {
     if (target && ns === "syminfo") {
-      if (!target.tickerid && target.ticker) {
-        target.tickerid = target.ticker;
-      }
+      target.tickerid = target.ticker ? cleanTicker(target.ticker) : cleanTicker(target.tickerid);
     }
     if (target && (ns === "box" || ns === "line" || ns === "label")) {
       const helperProto = Object.getPrototypeOf(target);
@@ -211,12 +209,14 @@ function createPineEngineWithFrontTables(
           return fetchSeries(symbol, canonicalTimeframe, range);
         }
 
-        const historyFrom = latestChartTime - seriesPlan.ms * 6;
-        // Keep a handful of secondary candles available even when the chart's own
-        // intraday history spans less time, and include broker bars ahead of Date.now().
+        const minBars = seriesPlan.kind === "day" ? 100 : 350;
+        const historyFrom = latestChartTime - seriesPlan.ms * minBars;
+        // Keep deep secondary candles available so indicators like EMA200, ATR,
+        // pivots, and trend filters compute accurately on live broker bars.
         const from = Math.min(range.from ?? historyFrom, historyFrom);
         const to = Math.max(range.to ?? latestChartTime, latestChartTime);
-        return fetchSeries(symbol, canonicalTimeframe, { ...range, from, to });
+        const limit = Math.max(range.limit ?? minBars, minBars);
+        return fetchSeries(cleanTicker(symbol), canonicalTimeframe, { ...range, from, to, limit });
       },
     };
   };
