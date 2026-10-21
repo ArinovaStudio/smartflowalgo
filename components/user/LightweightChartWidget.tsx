@@ -82,6 +82,26 @@ function removeHandle(handle: any) {
   try { (handle?.remove ?? handle?.dispose)?.call(handle); } catch { /* already removed */ }
 }
 
+function hasBoxGeometry(box: any): boolean {
+  return ["left", "right", "top", "bottom"].every(
+    (key) => typeof box?.[key] === "number" && Number.isFinite(box[key]),
+  );
+}
+
+function hasTableData(table: any): boolean {
+  return table.cells?.some((row: any[]) =>
+    row?.some((cell: any) => cell?.text != null && String(cell.text).trim() !== ""),
+  ) ?? false;
+}
+
+function isNullDrawingDeleteError(message: string): boolean {
+  return (
+    /can't access property\s+["']delete["'],\s*[\w$.]+\s+is\s+(?:null|undefined)/i.test(message) ||
+    /(?:null|undefined) is not an object \(evaluating '[^']*\.delete'\)/i.test(message) ||
+    /cannot read propert(?:y|ies) of (?:null|undefined) \(reading ["']delete["']\)/i.test(message)
+  );
+}
+
 function opaqueColor(color: string | undefined, fallback: string): string {
   if (!color || color.trim().toLowerCase() === "transparent") return fallback;
   const rgba = /^rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*[\d.]+\s*\)$/i.exec(color);
@@ -273,6 +293,22 @@ function createPineEngineWithFrontTables(
           }
         }
 
+        if (Array.isArray(model.boxes)) {
+          const emptyBoxIds = new Set(
+            model.boxes.filter((box: any) => !hasBoxGeometry(box)).map((box: any) => box.id),
+          );
+          model.boxes = model.boxes.filter(hasBoxGeometry);
+
+          if (emptyBoxIds.size > 0) {
+            const previous = lastBoxesByOwner.get(model.id);
+            if (previous) {
+              const retained = previous.filter((box: any) => !emptyBoxIds.has(box.id));
+              if (retained.length > 0) lastBoxesByOwner.set(model.id, retained);
+              else lastBoxesByOwner.delete(model.id);
+            }
+          }
+        }
+
         // Prevent drawing disappearance during streaming tick updates
         if (Array.isArray(model.boxes) && model.boxes.length > 0) {
           const prev = lastBoxesByOwner.get(model.id) || [];
@@ -322,7 +358,7 @@ function createPineEngineWithFrontTables(
           model.labels = lastLabelsByOwner.get(model.id)?.map((lb: any) => ({ ...lb }));
         }
 
-        const tables = model.tables?.map((table: any) => ({
+        const tables = (model.tables ?? []).filter(hasTableData).map((table: any) => ({
           ...table,
           overlay: true,
           bgColor: opaqueColor(table.bgColor, "#07111a"),
@@ -447,12 +483,16 @@ export default function LightweightChartWidget({
         workspaceRef.current = workspace;
         await workspace.chart.ready();
         if (cancelled) return;
+        workspace.setTimezone("Etc/UTC");
 
         offEvents.push(workspace.chart.on("indicator:error", ({ error }: { error: Error }) => {
+          const message = error?.message || "";
+          // The indicator loader handles actual failures; this event can be emitted for a recovered null drawing deletion.
+          if (isNullDrawingDeleteError(message)) return;
           setIndicatorState((current) => ({
             status: "error",
             name: current.name || "Indicator",
-            message: error?.message || "Pine execution failed",
+            message: message || "Pine execution failed",
           }));
         }));
         setBootError(null);

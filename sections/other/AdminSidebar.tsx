@@ -97,8 +97,8 @@ export default function AdminSidebar() {
           TOP ADMIN NAVBAR
       ═══════════════════════════════════════════ */}
       <header
-        className="fixed top-0 right-0 z-40 h-14 flex items-center gap-3 px-4 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md transition-all duration-300"
-        style={{ left: isCollapsed ? "4rem" : "16rem" }}
+        className="fixed w-full top-0 right-0 z-40 h-14 flex items-center gap-3 px-4 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md transition-all duration-300"
+        // style={{ left: isCollapsed ? "4rem" : "16rem" }}
       >
         {/* Mobile hamburger */}
         <button
