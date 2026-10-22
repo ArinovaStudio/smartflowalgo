@@ -50,6 +50,8 @@ export interface UserItem {
   discount: number | null;
   createdAt: string;
   updatedAt: string;
+  lastLoginIp: string | null;
+  lastLoginAt: string | null;
   hasPassword: boolean;
   paymentCount: number;
   referralCount: number;
@@ -410,6 +412,7 @@ export default function UserManagement() {
                 <th className="px-4 py-3.5 font-semibold">Plan Status</th>
                 <th className="px-4 py-3.5 font-semibold">TradingView ID</th>
                 <th className="px-4 py-3.5 font-semibold">Mobile</th>
+                <th className="px-4 py-3.5 font-semibold">Last Login IP</th>
                 <th className="px-4 py-3.5 font-semibold">Spent (₹)</th>
                 <th className="px-4 py-3.5 font-semibold">Joined</th>
                 <th className="px-4 py-3.5 font-semibold text-right">Actions</th>
@@ -512,6 +515,13 @@ export default function UserManagement() {
                     {/* Mobile */}
                     <td className="px-4 py-3.5 text-xs text-slate-600 dark:text-slate-300">
                       {u.mobile || "—"}
+                    </td>
+
+                    {/* Latest IP for the active session */}
+                    <td className="px-4 py-3.5 text-xs text-slate-600 dark:text-slate-300 font-mono">
+                      <span title={u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : undefined}>
+                        {u.lastLoginIp || "—"}
+                      </span>
                     </td>
 
                     {/* Total Spent */}

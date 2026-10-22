@@ -29,7 +29,7 @@ export async function GET() {
         }
 
         // 2. Fetch user, plan indicators, and direct grants
-        const dbUser = await prisma.user.findUnique({
+        let dbUser = await prisma.user.findUnique({
             where: { id: userId },
             include: {
                 plan: {
@@ -172,7 +172,7 @@ export async function GET() {
             planDate: dbUser.planDate?.toISOString() ?? null,
             renualDate: dbUser.renualDate?.toISOString() ?? null,
 
-            plan: dbUser.plan
+            plan: dbUser.planType === "PAID" && dbUser.plan
                 ? {
                     id: dbUser.plan.id,
                     name: dbUser.plan.name,

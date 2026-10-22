@@ -13,8 +13,6 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-console.log(EMAIL_USER, EMAIL_PASS);
-
 const sendEmail = async (to: string, subject: string, html: string): Promise<boolean> => {
     try {
         await transporter.verify()

@@ -59,6 +59,9 @@ model User {
   updatedAt       DateTime              @updatedAt
   discount        Int?
   renualDate      DateTime?
+  sessionVersion  Int                   @default(0)
+  lastLoginIp     String?
+  lastLoginAt     DateTime?
   accounts        Account[]
   sessions        Session[]
   payments        Payment[]             @relation("PaymentClient")

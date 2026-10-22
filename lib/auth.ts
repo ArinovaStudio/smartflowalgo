@@ -4,6 +4,34 @@ import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
+async function expirePaidUserIfNeeded(userId: string) {
+  const dbUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, userType: true, planType: true, renualDate: true },
+  });
+
+  if (
+    !dbUser ||
+    dbUser.userType === "ADMIN" ||
+    dbUser.planType !== "PAID" ||
+    !dbUser.renualDate ||
+    dbUser.renualDate > new Date()
+  ) {
+    return dbUser?.planType ?? null;
+  }
+
+  await prisma.user.update({
+    where: { id: dbUser.id },
+    data: { planType: "REJECTED" },
+  });
+  await prisma.userIndicatorAccess.updateMany({
+    where: { userId: dbUser.id, status: "GRANTED" },
+    data: { status: "REVOKED" },
+  });
+
+  return "REJECTED";
+}
+
 export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
@@ -92,33 +120,83 @@ export const authOptions: NextAuthOptions = {
     },
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id;
+        const loginUser = user.email
+          ? await prisma.user.findUnique({
+              where: { email: user.email.toLowerCase() },
+              select: { id: true },
+            })
+          : await prisma.user.findUnique({
+              where: { id: user.id },
+              select: { id: true },
+            });
+        if (!loginUser) throw new Error("Authenticated user record not found");
+
+        token.id = loginUser.id;
         token.userType = (user as any).userType;
         token.planType = (user as any).planType;
+        const activated = await prisma.user.update({
+          where: { id: loginUser.id },
+          data: { sessionVersion: { increment: 1 } },
+          select: { sessionVersion: true },
+        });
+        token.sessionVersion = activated.sessionVersion;
       }
-      if (token.email) {
+      if (token.id || token.email) {
         try {
-          const dbUser = await prisma.user.findUnique({
-            where: { email: token.email.toLowerCase() },
-          });
+          const dbUser = typeof token.id === "string"
+            ? await prisma.user.findUnique({ where: { id: token.id } })
+            : token.email
+              ? await prisma.user.findUnique({
+                  where: { email: token.email.toLowerCase() },
+                })
+              : null;
           if (dbUser) {
             token.id = dbUser.id;
             token.name = dbUser.name ?? undefined;
             token.image = dbUser.image ?? undefined;
             token.userType = dbUser.userType;
             token.planType = dbUser.planType ?? undefined;
+            if (typeof token.sessionVersion !== "number") {
+              // Tokens created before single-device login must stay at the
+              // initial version so the next login invalidates them.
+              token.sessionVersion = 0;
+            }
+            token.sessionRevoked = token.sessionVersion !== dbUser.sessionVersion;
           }
         } catch (error) {
           console.error("Error loading user in JWT callback:", error);
         }
       }
+      const userId = typeof token.id === "string" ? token.id : undefined;
+      if (userId && token.userType !== "ADMIN") {
+        try {
+          const planType = await expirePaidUserIfNeeded(userId);
+          if (planType) token.planType = planType;
+        } catch (error) {
+          console.error("Error checking user subscription expiry:", error);
+        }
+      }
       return token;
     },
     async session({ session, token }) {
+      if (token.sessionRevoked) return null as any;
       if (session.user) {
         session.user.id = token.id;
         session.user.userType = token.userType;
         session.user.planType = token.planType;
+
+        const userId = typeof token.id === "string" ? token.id : undefined;
+        if (userId && session.user.userType !== "ADMIN") {
+          try {
+            const planType = await expirePaidUserIfNeeded(userId);
+            if (planType) {
+              session.user.planType = planType;
+              token.planType = planType;
+            }
+          } catch (error) {
+            console.error("Error checking user subscription expiry:", error);
+          }
+        }
       }
       return session;
     },

@@ -311,6 +311,7 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
 
       setAssignModalLead(null);
       await fetchLeads();
+      if (json.warning) setError(json.warning);
     } catch (err: any) {
       setAssignError(err.message || "Failed to assign plan");
     } finally {
@@ -550,7 +551,7 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
                       )}
 
                       {/* Indicator access badge */}
-                      {accessCount > 0 ? (
+                      {/* {accessCount > 0 ? (
                         <button
                           type="button"
                           onClick={() => setViewIndicatorsLead(lead)}
@@ -561,7 +562,7 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
                         </button>
                       ) : (
                         <span className="text-[10px] text-slate-400">0 Indicators</span>
-                      )}
+                      )} */}
                     </div>
                   </td>
 
@@ -840,7 +841,7 @@ export default function LeadsTable({ initialData, initialTotal, pageSize }: Lead
                   </label>
                   <div className="grid grid-cols-4 gap-2">
                     {[
-                      { days: 3, label: "3 Days", sub: "Trial" },
+                      // { days: 3, label: "3 Days", sub: "Trial" },
                       { days: 30, label: "1 Month", sub: "30 days" },
                       { days: 90, label: "3 Months", sub: "Quarter" },
                       { days: 365, label: "1 Year", sub: "365 days" },

@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ success: true, data: plans });
   } catch (error: any) {
-    console.error("GET /api/plans error:", error);
+    // console.error("GET /api/plans error:", error);
     return NextResponse.json(
       { success: false, error: error?.message || "Failed to fetch plans" },
       { status: 500 }

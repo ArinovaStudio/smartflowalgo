@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
+import bcrypt from "bcryptjs";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { saveDataSchema } from "@/lib/checkout";
 import { isAuthorized, unauthorizedResponse } from "@/lib/basic-auth";
@@ -250,6 +254,11 @@ export async function DELETE(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    if ((session?.user as any)?.userType !== "ADMIN") {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+
     const body = await req.json();
     const { id, planType, planId, renualDate, broker } = body;
 
@@ -257,10 +266,45 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
+    const existing = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        password: true,
+        planType: true,
+        planId: true,
+        planDate: true,
+        tradingViewId: true,
+        mobile: true,
+      },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const firstPaidPlan =
+      planType === "PAID" &&
+      existing.planType !== "PAID" &&
+      !existing.planId &&
+      !existing.planDate;
+    const temporaryPassword =
+      firstPaidPlan && !existing.password
+        ? randomBytes(18).toString("base64url")
+        : null;
+
     const dataToUpdate: Prisma.UserUpdateInput = {};
 
     if (planType !== undefined) {
       dataToUpdate.planType = planType;
+    }
+
+    if (firstPaidPlan) {
+      dataToUpdate.planDate = new Date();
+    }
+    if (temporaryPassword) {
+      dataToUpdate.password = await bcrypt.hash(temporaryPassword, 12);
     }
 
     if (planId !== undefined) {
@@ -300,58 +344,52 @@ export async function PATCH(req: NextRequest) {
       },
     });
 
-    const activePlanId = planId || updated.planId;
-
-    // ── Step 2: Sync indicator access ──────────────────────────────────────────
-    if (planType === "PAID" && activePlanId) {
-      // Fetch all indicators for this plan
-      const plan = await prisma.plan.findUnique({
-        where: { id: activePlanId },
-        include: {
-          indicators: {
-            select: { indicatorId: true },
-          },
-        },
-      });
-
-      if (plan && plan.indicators.length > 0) {
-        // Upsert all plan indicators as GRANTED in parallel
-        await Promise.all(
-          plan.indicators.map((pi) =>
-            prisma.userIndicatorAccess.upsert({
-              where: {
-                userId_indicatorId: {
-                  userId: id,
-                  indicatorId: pi.indicatorId,
-                },
-              },
-              update: {
-                status: "GRANTED",
-                expiresAt: targetRenewalDate ?? null,
-                grantedBy: "Admin Plan Assignment",
-                reason: `Assigned via Plan: ${plan.name}`,
-              },
-              create: {
-                userId: id,
-                indicatorId: pi.indicatorId,
-                status: "GRANTED",
-                expiresAt: targetRenewalDate ?? null,
-                grantedBy: "Admin Plan Assignment",
-                reason: `Assigned via Plan: ${plan.name}`,
-              },
-            })
-          )
-        );
-      }
-    } else if (planType === "REJECTED" || planType === "APPLIED") {
-      // Revoke all active grants when status is moved away from PAID
+    // Plan indicator membership is evaluated directly from the user's plan.
+    // Keep explicit user grants separate; changing status still revokes them.
+    if (planType === "REJECTED" || planType === "APPLIED") {
       await prisma.userIndicatorAccess.updateMany({
         where: { userId: id, status: "GRANTED" },
         data: { status: "REVOKED" },
       });
     }
 
-    return NextResponse.json({ success: true, data: updated }, { status: 200 });
+    const { password: _passwordHash, ...safeUpdated } = updated;
+
+    let credentialsEmailSent: boolean | null = null;
+    if (temporaryPassword) {
+      const escapeHtml = (value: string) =>
+        value.replace(/[&<>\"']/g, (character) =>
+          ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character]!,
+        );
+      const loginUrl = `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/login`;
+      const html = `
+        <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#1f2937">
+          <h2>Your SmartFlowAlgo account is ready</h2>
+          <p>Hello ${escapeHtml(existing.name || "there")}, your first subscription plan has been activated.</p>
+          <p><strong>Login email:</strong> ${escapeHtml(existing.email)}</p>
+          <p><strong>Temporary password:</strong> <code style="font-size:18px">${temporaryPassword}</code></p>
+          <p><a href="${escapeHtml(loginUrl)}">Sign in to SmartFlowAlgo</a>, then change your password.</p>
+          <p>If you did not expect this email, contact SmartFlowAlgo support.</p>
+        </div>`;
+      credentialsEmailSent = await sendEmail(
+        existing.email,
+        "Your SmartFlowAlgo account login details",
+        html,
+      );
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: safeUpdated,
+        ...(credentialsEmailSent === false
+          ? { warning: "Plan activated, but the login email could not be sent. Use the admin password reset to help the user sign in." }
+          : credentialsEmailSent === true
+            ? { credentialsEmailSent: true }
+            : {}),
+      },
+      { status: 200 },
+    );
   } catch (err) {
     console.error("[save-data][PATCH] failed to update lead:", err);
     return NextResponse.json(

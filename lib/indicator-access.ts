@@ -34,6 +34,8 @@ export async function canUserAccessIndicator(
     select: {
       id: true,
       planType: true,
+      planId: true,
+      renualDate: true,
       userType: true,
     },
   });
@@ -64,8 +66,15 @@ export async function canUserAccessIndicator(
 
   const indicator = await prisma.indicator.findUnique({
     where: { id: indicatorId },
-    include: {
-      planAccess: true,
+    select: {
+      id: true,
+      name: true,
+      tradingViewId: true,
+      tradingViewUrl: true,
+      currentVersion: true,
+      status: true,
+      isActive: true,
+      isPremium: true,
     },
   });
 
@@ -132,12 +141,38 @@ export async function canUserAccessIndicator(
     };
   }
 
-  // Premium indicator requires active PAID plan
+  // Premium indicator requires an active paid plan that includes this indicator.
   if (user.planType === "PAID") {
-    // If indicator has no specific plan restriction or user's plan is active
+    if (user.renualDate && user.renualDate < new Date()) {
+      return {
+        allowed: false,
+        reason: "ACCESS_EXPIRED",
+        expiresAt: user.renualDate,
+      };
+    }
+
+    if (!user.planId) {
+      return { allowed: false, reason: "PLAN_NOT_ELIGIBLE" };
+    }
+
+    const planIncludesIndicator = await prisma.planIndicator.findUnique({
+      where: {
+        planId_indicatorId: {
+          planId: user.planId,
+          indicatorId,
+        },
+      },
+      select: { indicatorId: true },
+    });
+
+    if (!planIncludesIndicator) {
+      return { allowed: false, reason: "PLAN_NOT_ELIGIBLE" };
+    }
+
     return {
       allowed: true,
       reason: "PLAN_ACCESS",
+      expiresAt: user.renualDate,
       indicator: {
         id: indicator.id,
         name: indicator.name,
