@@ -3,10 +3,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { MT5_ALIAS_PREFIXES, Mt5VelaProvider } from "./Mt5VelaProvider";
-import { toVelaTimeframe } from "./mt5Timeframes";
+import { cleanTicker, planTimeframe, toVelaTimeframe } from "./mt5Timeframes";
 import type { LightweightChartWidgetProps } from "./types";
+import type { FetchSeries } from "@luxalgo/vela";
 import { registerRendererDefaults } from "@luxalgo/vela/plugin";
-import { runPostProcessedPineScript } from "./pine-fix";
+import { normalizePineScript, runPostProcessedPineScript } from "./pine-fix";
 
 export type { DrawingItem, IndicatorMeta } from "./types";
 
@@ -19,8 +20,33 @@ type IndicatorState = {
 type ActiveIndicator = { key: string; name: string; source: string };
 type PineTableEntry = { ownerId: string; table: any };
 
-/** How many bars the chart loads. Scripts that look back over days (e.g. backtests) are limited by this. */
+/** Baseline chart history; longer intraday range-timeframe scripts need deeper context. */
 const CHART_BARS = 1500;
+const MAX_CHART_BARS = 15_000;
+const RANGE_LOOKBACK_CANDLES = 60;
+
+function enlargePineLabel(size: unknown): unknown {
+  switch (size) {
+    case "tiny": return "small";
+    case "small": return "normal";
+    case "normal": return "large";
+    case "large":
+    case "huge": return "huge";
+    default: return size;
+  }
+}
+
+function chartHistoryBars(timeframe: string): number {
+  const chartMs = planTimeframe(toVelaTimeframe(timeframe)).ms;
+  const chartSeconds = chartMs / 1000;
+  const rangeMs = chartSeconds >= 4 * 60 * 60 && chartSeconds < 24 * 60 * 60
+    ? 7 * 24 * 60 * 60 * 1000
+    : chartSeconds >= 60 * 60 && chartSeconds < 4 * 60 * 60
+      ? 24 * 60 * 60 * 1000
+      : 4 * 60 * 60 * 1000;
+  const needed = Math.ceil(RANGE_LOOKBACK_CANDLES * rangeMs / chartMs);
+  return Math.max(CHART_BARS, Math.min(MAX_CHART_BARS, needed));
+}
 
 function pineSource(entry: any): string {
   const sourceKeys = ["script", "pineSource", "pineScript", "pine", "source", "code", "content"];
@@ -54,6 +80,26 @@ function velaSymbol(symbol: string): string {
 
 function removeHandle(handle: any) {
   try { (handle?.remove ?? handle?.dispose)?.call(handle); } catch { /* already removed */ }
+}
+
+function hasBoxGeometry(box: any): boolean {
+  return ["left", "right", "top", "bottom"].every(
+    (key) => typeof box?.[key] === "number" && Number.isFinite(box[key]),
+  );
+}
+
+function hasTableData(table: any): boolean {
+  return table.cells?.some((row: any[]) =>
+    row?.some((cell: any) => cell?.text != null && String(cell.text).trim() !== ""),
+  ) ?? false;
+}
+
+function isNullDrawingDeleteError(message: string): boolean {
+  return (
+    /can't access property\s+["']delete["'],\s*[\w$.]+\s+is\s+(?:null|undefined)/i.test(message) ||
+    /(?:null|undefined) is not an object \(evaluating '[^']*\.delete'\)/i.test(message) ||
+    /cannot read propert(?:y|ies) of (?:null|undefined) \(reading ["']delete["']\)/i.test(message)
+  );
 }
 
 function opaqueColor(color: string | undefined, fallback: string): string {
@@ -104,19 +150,215 @@ function readableTextColor(textColor: string | undefined, backgroundColor: strin
   return blackContrast >= whiteContrast ? "#000000" : "#ffffff";
 }
 
+let drawingPatchApplied = false;
+function ensureDrawingPersistencePatch(ContextClass: any) {
+  if (drawingPatchApplied || !ContextClass?.prototype) return;
+  const proto = ContextClass.prototype;
+  const orig = proto.bindContextObject;
+  if (typeof orig !== "function") return;
+  proto.bindContextObject = function(target: any, names: string[], ns: string) {
+    if (target && ns === "syminfo") {
+      target.tickerid = target.ticker ? cleanTicker(target.ticker) : cleanTicker(target.tickerid);
+    }
+    if (target && (ns === "box" || ns === "line" || ns === "label")) {
+      const helperProto = Object.getPrototypeOf(target);
+      if (helperProto && !helperProto.__sfa_drawing_patched) {
+        const setters = ns === "box"
+          ? [
+              "set_left", "set_right", "set_top", "set_bottom",
+              "set_lefttop", "set_rightbottom", "set_bgcolor",
+              "set_border_color", "set_border_width", "set_border_style",
+              "set_extend", "set_text", "set_text_color", "set_text_size",
+              "set_text_halign", "set_text_valign", "set_text_wrap", "set_text_font_family",
+            ]
+          : ns === "line"
+          ? [
+              "set_x1", "set_x2", "set_y1", "set_y2", "set_xy1", "set_xy2",
+              "set_color", "set_width", "set_style", "set_extend",
+            ]
+          : [
+              "set_x", "set_y", "set_xy", "set_text", "set_color",
+              "set_textcolor", "set_size", "set_style", "set_yloc",
+              "set_textalign", "set_tooltip",
+            ];
+        const collection = ns === "box" ? "_boxes" : ns === "line" ? "_lines" : "_labels";
+        for (const setter of setters) {
+          const original = helperProto[setter];
+          if (typeof original !== "function") continue;
+          helperProto[setter] = function(drawing: any, ...args: any[]) {
+            if (drawing) {
+              drawing.force_overlay = true;
+              drawing.overlay = true;
+              if (!drawing._deleted && Array.isArray(this[collection]) && !this[collection].includes(drawing)) {
+                this[collection].push(drawing);
+              }
+            }
+            return original.call(this, drawing, ...args);
+          };
+        }
+        helperProto.__sfa_drawing_patched = true;
+      }
+    }
+    orig.call(this, target, names, ns);
+  };
+  drawingPatchApplied = true;
+}
+
 function createPineEngineWithFrontTables(
   PineEngine: new () => any,
   onTables: (ownerId: string, tables: any[]) => void,
 ): any {
   const engine = new PineEngine();
+  const lastBoxesByOwner = new Map<string, any[]>();
+  const lastLinesByOwner = new Map<string, any[]>();
+  const lastLabelsByOwner = new Map<string, any[]>();
+
+  const alignSecondarySeries = (request: any) => {
+    const fetchSeries: FetchSeries | undefined = request.fetchSeries;
+    if (!fetchSeries) return request;
+
+    return {
+      ...request,
+      fetchSeries: (symbol: string, timeframe: string, range: Parameters<FetchSeries>[2]) => {
+        const seriesPlan = planTimeframe(timeframe);
+        const canonicalTimeframe = seriesPlan.vela;
+        const liveBars = request.getBars?.();
+        const chartBars = liveBars?.length ? liveBars : request.bars;
+        const latestChartTime = chartBars?.[chartBars.length - 1]?.time;
+        if (typeof latestChartTime !== "number" || !Number.isFinite(latestChartTime)) {
+          return fetchSeries(symbol, canonicalTimeframe, range);
+        }
+
+        const minBars = seriesPlan.kind === "day" ? 100 : 350;
+        const historyFrom = latestChartTime - seriesPlan.ms * minBars;
+        // Keep deep secondary candles available so indicators like EMA200, ATR,
+        // pivots, and trend filters compute accurately on live broker bars.
+        const from = Math.min(range.from ?? historyFrom, historyFrom);
+        const to = Math.max(range.to ?? latestChartTime, latestChartTime);
+        const limit = Math.max(range.limit ?? minBars, minBars);
+        return fetchSeries(cleanTicker(symbol), canonicalTimeframe, { ...range, from, to, limit });
+      },
+    };
+  };
+
   return {
     language: engine.language,
     capabilities: engine.capabilities,
-    prepare: (source: string, instanceId: string) => engine.prepare(source, instanceId),
-    execute: (request: any, handlers: any) => engine.execute(request, {
-      ...handlers,
-      onModel: (model: any) => {
-        const tables = model.tables?.map((table: any) => ({
+    prepare: (source: string, instanceId: string) => engine.prepare(normalizePineScript(source), instanceId),
+    execute: (request: any, handlers: any) => engine.execute(alignSecondarySeries(request), {
+        ...handlers,
+        onModel: (model: any) => {
+        const isOverlay = Boolean(model.overlay ?? (model.paneHint === "price"));
+
+        if (Array.isArray(model.labels)) {
+          model.labels = model.labels.map((label: any) => ({
+            ...label,
+            size: enlargePineLabel(label.size),
+          }));
+        }
+
+        // When indicator is an overlay on price, mark all drawings with overlay: true and paneId: "price"
+        // so Vela's price-pane canvas renderer includes them in autoscale and renders them
+        if (isOverlay) {
+          model.overlay = true;
+          if (Array.isArray(model.boxes)) {
+            for (const b of model.boxes) {
+              b.overlay = true;
+              if (!b.paneId || b.paneId === "unrouted") b.paneId = "price";
+            }
+          }
+          if (Array.isArray(model.lines)) {
+            for (const l of model.lines) {
+              l.overlay = true;
+              if (!l.paneId || l.paneId === "unrouted") l.paneId = "price";
+            }
+          }
+          if (Array.isArray(model.labels)) {
+            for (const lb of model.labels) {
+              lb.overlay = true;
+              if (!lb.paneId || lb.paneId === "unrouted") lb.paneId = "price";
+            }
+          }
+          if (Array.isArray(model.linefills)) {
+            for (const lf of model.linefills) {
+              lf.overlay = true;
+              if (!lf.paneId || lf.paneId === "unrouted") lf.paneId = "price";
+            }
+          }
+          if (Array.isArray(model.polylines)) {
+            for (const pl of model.polylines) {
+              pl.overlay = true;
+              if (!pl.paneId || pl.paneId === "unrouted") pl.paneId = "price";
+            }
+          }
+        }
+
+        if (Array.isArray(model.boxes)) {
+          const emptyBoxIds = new Set(
+            model.boxes.filter((box: any) => !hasBoxGeometry(box)).map((box: any) => box.id),
+          );
+          model.boxes = model.boxes.filter(hasBoxGeometry);
+
+          if (emptyBoxIds.size > 0) {
+            const previous = lastBoxesByOwner.get(model.id);
+            if (previous) {
+              const retained = previous.filter((box: any) => !emptyBoxIds.has(box.id));
+              if (retained.length > 0) lastBoxesByOwner.set(model.id, retained);
+              else lastBoxesByOwner.delete(model.id);
+            }
+          }
+        }
+
+        // Prevent drawing disappearance during streaming tick updates
+        if (Array.isArray(model.boxes) && model.boxes.length > 0) {
+          const prev = lastBoxesByOwner.get(model.id) || [];
+          if (model.boxes.length >= prev.length) {
+            lastBoxesByOwner.set(model.id, model.boxes.map((b: any) => ({ ...b, overlay: isOverlay ? true : b.overlay, paneId: isOverlay ? "price" : b.paneId })));
+          } else {
+            const existingMap = new Map<string, any>(prev.map((b: any) => [b.id, b]));
+            for (const b of model.boxes) {
+              existingMap.set(b.id, { ...b, overlay: isOverlay ? true : b.overlay, paneId: isOverlay ? "price" : b.paneId });
+            }
+            model.boxes = Array.from(existingMap.values());
+            lastBoxesByOwner.set(model.id, model.boxes.map((b: any) => ({ ...b })));
+          }
+        } else if ((!model.boxes || model.boxes.length === 0) && lastBoxesByOwner.has(model.id)) {
+          model.boxes = lastBoxesByOwner.get(model.id)?.map((b: any) => ({ ...b }));
+        }
+
+        if (Array.isArray(model.lines) && model.lines.length > 0) {
+          const prev = lastLinesByOwner.get(model.id) || [];
+          if (model.lines.length >= prev.length) {
+            lastLinesByOwner.set(model.id, model.lines.map((l: any) => ({ ...l, overlay: isOverlay ? true : l.overlay, paneId: isOverlay ? "price" : l.paneId })));
+          } else {
+            const existingMap = new Map<string, any>(prev.map((l: any) => [l.id, l]));
+            for (const l of model.lines) {
+              existingMap.set(l.id, { ...l, overlay: isOverlay ? true : l.overlay, paneId: isOverlay ? "price" : l.paneId });
+            }
+            model.lines = Array.from(existingMap.values());
+            lastLinesByOwner.set(model.id, model.lines.map((l: any) => ({ ...l })));
+          }
+        } else if ((!model.lines || model.lines.length === 0) && lastLinesByOwner.has(model.id)) {
+          model.lines = lastLinesByOwner.get(model.id)?.map((l: any) => ({ ...l }));
+        }
+
+        if (Array.isArray(model.labels) && model.labels.length > 0) {
+          const prev = lastLabelsByOwner.get(model.id) || [];
+          if (model.labels.length >= prev.length) {
+            lastLabelsByOwner.set(model.id, model.labels.map((lb: any) => ({ ...lb, overlay: isOverlay ? true : lb.overlay, paneId: isOverlay ? "price" : lb.paneId })));
+          } else {
+            const existingMap = new Map<string, any>(prev.map((lb: any) => [lb.id, lb]));
+            for (const lb of model.labels) {
+              existingMap.set(lb.id, { ...lb, overlay: isOverlay ? true : lb.overlay, paneId: isOverlay ? "price" : lb.paneId });
+            }
+            model.labels = Array.from(existingMap.values());
+            lastLabelsByOwner.set(model.id, model.labels.map((lb: any) => ({ ...lb })));
+          }
+        } else if ((!model.labels || model.labels.length === 0) && lastLabelsByOwner.has(model.id)) {
+          model.labels = lastLabelsByOwner.get(model.id)?.map((lb: any) => ({ ...lb }));
+        }
+
+        const tables = (model.tables ?? []).filter(hasTableData).map((table: any) => ({
           ...table,
           overlay: true,
           bgColor: opaqueColor(table.bgColor, "#07111a"),
@@ -126,8 +368,8 @@ function createPineEngineWithFrontTables(
           }))),
         }));
         onTables(model.id, tables ?? []);
-        handlers.onModel({ ...model, tables: [] });
-      },
+          handlers.onModel({ ...model, tables: [] });
+        },
     }),
   };
 }
@@ -184,10 +426,12 @@ export default function LightweightChartWidget({
 
     const boot = async () => {
       try {
-        const [{ VelaWorkspace }, { PineEngine }] = await Promise.all([
+        const [{ VelaWorkspace }, { PineEngine }, { Context }] = await Promise.all([
           import("@luxalgo/vela/workspace"),
           import("@luxalgo/vela-pinets"),
+          import("pinets"),
         ]);
+        ensureDrawingPersistencePatch(Context);
         if (cancelled || !hostRef.current) return;
 
         const provider = new Mt5VelaProvider({
@@ -216,7 +460,7 @@ export default function LightweightChartWidget({
           layout: false,
           symbol: velaSymbol(symbolRef.current),
           timeframe: toVelaTimeframe(timeframeRef.current),
-          bars: CHART_BARS,
+          bars: chartHistoryBars(timeframeRef.current),
           live: true,
           theme: themeRef.current,
           upColor: "#089981",
@@ -239,12 +483,16 @@ export default function LightweightChartWidget({
         workspaceRef.current = workspace;
         await workspace.chart.ready();
         if (cancelled) return;
+        workspace.setTimezone("Etc/UTC");
 
         offEvents.push(workspace.chart.on("indicator:error", ({ error }: { error: Error }) => {
+          const message = error?.message || "";
+          // The indicator loader handles actual failures; this event can be emitted for a recovered null drawing deletion.
+          if (isNullDrawingDeleteError(message)) return;
           setIndicatorState((current) => ({
             status: "error",
             name: current.name || "Indicator",
-            message: error?.message || "Pine execution failed",
+            message: message || "Pine execution failed",
           }));
         }));
         setBootError(null);
@@ -294,6 +542,7 @@ export default function LightweightChartWidget({
     void chart.setMarket({
       ...(sameSymbol ? {} : { symbol: nextSymbol }),
       ...(sameTimeframe ? {} : { timeframe: nextTimeframe }),
+      bars: chartHistoryBars(initialTimeframe),
     }).catch((error: unknown) => console.error("[Vela] market switch failed:", error));
   }, [initialSymbol, initialTimeframe, ready]);
 
@@ -341,7 +590,12 @@ export default function LightweightChartWidget({
       };
       const stillWanted = () => wantedRef.current.get(indicator.key)?.source === indicator.source;
 
-      void runPostProcessedPineScript(chart, indicator.source, { id, title: indicator.name }).then((result: any) => {
+      const isOverlay = /(?<![\w.$])overlay\s*[:=]\s*true/.test(indicator.source);
+      void runPostProcessedPineScript(chart, indicator.source, {
+        id,
+        title: indicator.name,
+        ...(isOverlay ? { overlay: true, pane: "price" } : {}),
+      }).then((result: any) => {
         settle();
         const handle = result?.handle;
         if (!result?.ok || !handle) {
@@ -400,20 +654,24 @@ export default function LightweightChartWidget({
                   ? table.position?.includes("center") ? "translate(-50%, -50%)" : "translateY(-50%)"
                   : table.position?.includes("center") ? "translateX(-50%)" : undefined,
               };
-          const defaultWidth = Math.max(200, Math.min(560, (table.columns ?? 3) * 108));
-          const defaultHeight = Math.max(72, Math.min(440, (table.rows ?? 3) * 24 + 24));
+          const activeRows = (table.cells ?? []).filter(
+            (r: any[]) => r && r.some((c: any) => c && c.text != null && String(c.text).trim() !== "")
+          );
+          const activeRowCount = Math.max(1, activeRows.length);
+          const defaultWidth = Math.max(200, Math.min(560, (table.columns ?? 3) * 110));
+          const defaultHeight = Math.max(50, Math.min(480, 26 + activeRowCount * 22));
           const merges: any[] = table.merges ?? [];
 
           return (
             <div
               key={table.id}
-              className={`pointer-events-auto absolute max-w-[90%] max-h-[85%] rounded-sm shadow-xl ${minimized ? "min-w-[150px] overflow-hidden" : "min-w-[180px] min-h-[80px] resize overflow-auto"}`}
+              className={`pointer-events-auto absolute max-w-[90%] max-h-[85%] rounded-sm shadow-xl ${minimized ? "min-w-[150px] overflow-hidden" : "min-w-[180px] resize overflow-auto"}`}
               style={{
                 ...anchorStyle,
                 width: minimized ? 180 : size?.width ?? defaultWidth,
                 height: minimized ? 26 : size?.height ?? defaultHeight,
-                minWidth: minimized ? 150 : Math.max(180, Math.min(420, (table.columns ?? 2) * 68)),
-                minHeight: minimized ? 26 : Math.max(80, Math.min(360, 26 + (table.rows ?? 3) * 17)),
+                minWidth: minimized ? 150 : Math.max(180, Math.min(380, (table.columns ?? 2) * 80)),
+                minHeight: minimized ? 26 : 50,
                 backgroundColor: defaultBg,
                 border: `${Math.max(1, table.frameWidth ?? 0)}px solid ${table.frameColor ?? table.borderColor ?? "#64748b"}`,
               }}
@@ -466,37 +724,41 @@ export default function LightweightChartWidget({
               {!minimized && (
                 <table className="w-max min-w-full table-auto border-collapse text-[11px] leading-tight">
                   <tbody>
-                    {(table.cells ?? []).map((row: any[], rowIndex: number) => (
-                      <tr key={rowIndex}>
-                        {row.map((cell: any, colIndex: number) => {
-                          const merge = merges.find((item) => item.startRow === rowIndex && item.startCol === colIndex);
-                          const covered = merges.some((item) => rowIndex >= item.startRow && rowIndex <= item.endRow && colIndex >= item.startCol && colIndex <= item.endCol && (rowIndex !== item.startRow || colIndex !== item.startCol));
-                          if (covered) return null;
-                          return (
-                            <td
-                              key={colIndex}
-                              colSpan={merge ? merge.endCol - merge.startCol + 1 : undefined}
-                              rowSpan={merge ? merge.endRow - merge.startRow + 1 : undefined}
-                              title={cell?.tooltip}
-                              className="border px-1 py-0.5"
-                              style={{
-                                color: readableTextColor(cell?.textColor, opaqueColor(cell?.bgColor, defaultBg), "#e2e8f0"),
-                                backgroundColor: opaqueColor(cell?.bgColor, defaultBg),
-                                borderColor: table.borderColor ?? "rgba(148,163,184,.45)",
-                                fontSize: typeof cell?.textSize === "number" ? cell.textSize : undefined,
-                                fontWeight: cell?.bold ? 700 : 400,
-                                fontStyle: cell?.italic ? "italic" : "normal",
-                                textAlign: cell?.hAlign ?? "center",
-                                verticalAlign: cell?.vAlign ?? "middle",
-                                width: cell?.width ? `${cell.width}%` : undefined,
-                                whiteSpace: "pre-wrap",
-                                overflowWrap: "anywhere",
-                              }}
-                            >{cell?.text ?? ""}</td>
-                          );
-                        })}
-                      </tr>
-                    ))}
+                    {(table.cells ?? []).map((row: any[], rowIndex: number) => {
+                      const isEmptyRow = !row || row.every((c: any) => !c || c.text == null || String(c.text).trim() === "");
+                      if (isEmptyRow) return null;
+                      return (
+                        <tr key={rowIndex}>
+                          {row.map((cell: any, colIndex: number) => {
+                            const merge = merges.find((item) => item.startRow === rowIndex && item.startCol === colIndex);
+                            const covered = merges.some((item) => rowIndex >= item.startRow && rowIndex <= item.endRow && colIndex >= item.startCol && colIndex <= item.endCol && (rowIndex !== item.startRow || colIndex !== item.startCol));
+                            if (covered) return null;
+                            return (
+                              <td
+                                key={colIndex}
+                                colSpan={merge ? merge.endCol - merge.startCol + 1 : undefined}
+                                rowSpan={merge ? merge.endRow - merge.startRow + 1 : undefined}
+                                title={cell?.tooltip}
+                                className="border px-1 py-0.5"
+                                style={{
+                                  color: readableTextColor(cell?.textColor, opaqueColor(cell?.bgColor, defaultBg), "#e2e8f0"),
+                                  backgroundColor: opaqueColor(cell?.bgColor, defaultBg),
+                                  borderColor: table.borderColor ?? "rgba(148,163,184,.45)",
+                                  fontSize: typeof cell?.textSize === "number" ? cell.textSize : undefined,
+                                  fontWeight: cell?.bold ? 700 : 400,
+                                  fontStyle: cell?.italic ? "italic" : "normal",
+                                  textAlign: cell?.hAlign ?? "center",
+                                  verticalAlign: cell?.vAlign ?? "middle",
+                                  width: cell?.width ? `${cell.width}%` : undefined,
+                                  whiteSpace: "pre-wrap",
+                                  overflowWrap: "anywhere",
+                                }}
+                              >{cell?.text ?? ""}</td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}

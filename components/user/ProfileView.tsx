@@ -26,16 +26,16 @@ export default function ProfileView() {
     };
 
     return (
-        <div className="max-w-[1600px] mx-auto space-y-6 pb-12 px-4 md:px-8">
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-slate-900 via-slate-950 to-indigo-950 p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+        <div className="mx-auto w-full min-w-0 max-w-[1600px] space-y-4 pb-8 sm:space-y-6 sm:pb-12">
+            <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-950 to-indigo-950 p-4 text-white shadow-xl dark:border-slate-800 sm:p-8">
                 <div className="absolute right-0 top-0 -mt-10 -mr-10 w-80 h-80 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
-                    <div className="flex items-center gap-5">
+                    <div className="flex min-w-0 items-center gap-3 sm:gap-5">
                         <div className="relative">
                             {user.image ? (
-                                <img src={user.image} alt={user.name || "User"} className="w-20 h-20 rounded-2xl border-2 border-sky-400 object-cover shadow-lg" />
+                                <img src={user.image} alt={user.name || "User"} className="h-16 w-16 rounded-2xl border-2 border-sky-400 object-cover shadow-lg sm:h-20 sm:w-20" />
                             ) : (
-                                <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-sky-500 via-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-black shadow-lg">
+                                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-sky-500 via-indigo-500 to-purple-600 text-2xl font-black text-white shadow-lg sm:h-20 sm:w-20">
                                     {(user.name || user.email || "U").charAt(0).toUpperCase()}
                                 </div>
                             )}
@@ -43,13 +43,13 @@ export default function ProfileView() {
                                 <Check className="w-3 h-3 text-white stroke-[3]" />
                             </div>
                         </div>
-                        <div>
+                        <div className="min-w-0">
                             <div className="flex items-center gap-2.5 flex-wrap">
                                 <h2 className="text-xl sm:text-2xl font-black tracking-tight">{user.name || "Member Trader"}</h2>
                                 <span className="px-2.5 py-0.5 rounded-full bg-sky-500/20 border border-sky-500/30 text-sky-400 text-xs font-bold uppercase tracking-wider">{user.userType || "CLIENT"}</span>
                                 {user.plan && <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase">{user.plan.name}</span>}
                             </div>
-                            <p className="text-xs sm:text-sm text-slate-300 mt-1 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-sky-400" /><span>{user.email}</span></p>
+                            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-slate-300 sm:text-sm"><Mail className="h-3.5 w-3.5 shrink-0 text-sky-400" /><span className="break-all">{user.email}</span></p>
                             {user.createdAt && (
                                 <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
                                     <Calendar className="w-3.5 h-3.5 text-slate-500" />
@@ -58,19 +58,19 @@ export default function ProfileView() {
                             )}
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <Link href="/user/chart" className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold shadow-lg shadow-sky-500/25 transition-all flex items-center gap-2">
+                    <div className="flex flex-wrap gap-2 sm:gap-3">
+                        <Link href="/user/chart" className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-500 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-sky-500/25 transition-all hover:bg-sky-400 sm:flex-none">
                             <LineChart className="w-4 h-4" /><span>Live Terminal</span>
                         </Link>
-                        <Link href="/user" className="px-4 py-2 rounded-xl border border-white/20 hover:bg-white/10 text-white text-xs font-bold transition-all flex items-center gap-2">
+                        <Link href="/user" className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/20 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-white/10 sm:flex-none">
                             <LayoutDashboard className="w-4 h-4" /><span>Dashboard</span>
                         </Link>
                     </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 p-5 shadow-sm space-y-4">
+            <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 sm:gap-6">
+                <div className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 sm:p-5">
                     <div className="flex items-center gap-2 text-slate-900 dark:text-white font-extrabold text-sm pb-3 border-b border-slate-100 dark:border-slate-800/80">
                         <User className="w-4 h-4 text-sky-500" /><span>Personal Details</span>
                     </div>
@@ -91,7 +91,7 @@ export default function ProfileView() {
                     </div>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 p-5 shadow-sm space-y-4">
+                <div className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 sm:p-5">
                     <div className="flex items-center gap-2 text-slate-900 dark:text-white font-extrabold text-sm pb-3 border-b border-slate-100 dark:border-slate-800/80">
                         <LineChart className="w-4 h-4 text-emerald-500" /><span>Trading & Brokerage</span>
                     </div>

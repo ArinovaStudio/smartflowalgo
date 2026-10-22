@@ -100,27 +100,27 @@ export function OhlcStrip({ symbol, activeSymbolInfo, hoveredCandle, currentTick
   const fallbackPrice = currentTick.price.toFixed(digits);
 
   return (
-    <div className="flex items-center gap-3 px-3 py-1 text-[11px] font-mono border-b border-slate-100 dark:border-[#2a2e39]/60 bg-white/40 dark:bg-[#131722]/90 overflow-x-auto shrink-0 select-none">
+    <div className="flex items-center gap-3 overflow-x-auto border-b border-slate-100 bg-white/40 px-3 py-1 text-[11px] font-mono dark:border-[#2a2e39]/60 dark:bg-[#131722]/90 shrink-0 select-none">
       {symbol ? (
         <>
-          <span className="font-extrabold text-[#2962FF]">{symbol}</span>
-          <span>
+          <span className="shrink-0 whitespace-nowrap font-extrabold text-[#2962FF]">{symbol}</span>
+          <span className="shrink-0 whitespace-nowrap">
             O: <strong>{hoveredCandle ? hoveredCandle.open.toFixed(digits) : fallbackPrice}</strong>
           </span>
-          <span>
+          <span className="shrink-0 whitespace-nowrap">
             H: <strong className="text-[#089981]">{hoveredCandle ? hoveredCandle.high.toFixed(digits) : fallbackPrice}</strong>
           </span>
-          <span>
+          <span className="shrink-0 whitespace-nowrap">
             L: <strong className="text-[#f23645]">{hoveredCandle ? hoveredCandle.low.toFixed(digits) : fallbackPrice}</strong>
           </span>
-          <span>
+          <span className="shrink-0 whitespace-nowrap">
             C: <strong>{hoveredCandle ? hoveredCandle.close.toFixed(digits) : fallbackPrice}</strong>
           </span>
-          <span className={currentTick.change >= 0 ? "text-[#089981] font-bold" : "text-[#f23645] font-bold"}>
+          <span className={`shrink-0 whitespace-nowrap ${currentTick.change >= 0 ? "text-[#089981] font-bold" : "text-[#f23645] font-bold"}`}>
             {currentTick.change >= 0 ? "+" : ""}
             {currentTick.change.toFixed(digits)} ({currentTick.changePercent.toFixed(2)}%)
           </span>
-          {activeSymbolInfo.spread !== undefined && <span className="text-slate-400 text-[10px]">Spread: {String(activeSymbolInfo.spread)}</span>}
+          {activeSymbolInfo.spread !== undefined && <span className="shrink-0 whitespace-nowrap text-slate-400 text-[10px]">Spread: {String(activeSymbolInfo.spread)}</span>}
         </>
       ) : (
         <span className="text-slate-400 italic">Streaming tick feed...</span>

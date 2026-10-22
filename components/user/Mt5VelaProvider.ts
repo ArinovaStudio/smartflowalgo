@@ -1,7 +1,6 @@
 import type { BarRange, DataProvider, OHLCV, SymbolDescriptor, SymbolInfo } from "@luxalgo/vela";
 import {
   aggregateBars,
-  aggregateTail,
   bucketOpen,
   cleanTicker,
   mergeSorted,
@@ -19,6 +18,9 @@ import {
  *
  *   history  GET  /api/mt5/history   short JSON requests, ranged, any number in parallel
  *   live     POST /api/mt5/live      ONE tick stream per symbol, candles built here
+ *
+ * MT5 timestamps are server-clock wall times encoded as UTC epochs. The provider
+ * keeps those raw times internally and converts bars exposed to Vela to UTC.
  *
  * How request.security() is served
  *   Vela's fetchSeries gateway does no timeframe aggregation: it calls
@@ -82,18 +84,48 @@ export interface Mt5VelaProviderOptions {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-function rangeBars(bars: Bar[], range: BarRange): Bar[] {
+function rangeBars(bars: Bar[], range: BarRange, clockNow?: number): Bar[] {
   let out = bars;
   if (range.from != null) {
     const from = range.from;
     out = out.filter((b) => b.time >= from);
   }
   if (range.to != null) {
-    const to = range.to;
-    out = out.filter((b) => b.time <= to);
+    const maxTo = Math.max(range.to, clockNow ?? 0);
+    out = out.filter((b) => b.time <= maxTo);
   }
   if (range.limit != null && range.limit > 0 && out.length > range.limit) out = out.slice(-range.limit);
   return out === bars ? bars.slice() : out;
+}
+
+function aggregateUtcTail(bars: Bar[], plan: TimeframePlan, serverOffset: number): Bar | null {
+  const last = bars[bars.length - 1];
+  if (!last) return null;
+  const utcTime = last.time - serverOffset;
+  const utcOpen = bucketOpen(plan.kind, plan.n, utcTime);
+  const rawOpen = utcOpen + serverOffset;
+  let i = bars.length - 1;
+  while (i >= 0 && bars[i].time >= rawOpen) i--;
+  i++;
+  if (i >= bars.length) return null;
+
+  const first = bars[i];
+  const result: Bar = {
+    time: utcOpen,
+    open: first.open,
+    high: first.high,
+    low: first.low,
+    close: first.close,
+    volume: first.volume,
+  };
+  for (let j = i + 1; j < bars.length; j++) {
+    const bar = bars[j];
+    result.high = Math.max(result.high, bar.high);
+    result.low = Math.min(result.low, bar.low);
+    result.close = bar.close;
+    result.volume += bar.volume;
+  }
+  return result;
 }
 
 async function readError(res: Response, fallback: string): Promise<string> {
@@ -206,7 +238,8 @@ class NativeSeries {
       if (!first || toMs < first.time) {
         // Nothing at or before `toMs` yet: the bridge only returns the NEWEST n bars,
         // so n must reach back past `toMs`. (Calendar time over-counts weekends; that is fine.)
-        count = Math.ceil((Date.now() - Math.min(toMs, Date.now())) / this.nativeMs) + need;
+        const effectiveNow = Math.max(Date.now(), toMs);
+        count = Math.ceil((effectiveNow - Math.min(toMs, effectiveNow)) / this.nativeMs) + need;
       } else {
         const have = this.countAtOrBefore(toMs);
         if (have >= need) return;
@@ -456,49 +489,39 @@ export class Mt5VelaProvider implements DataProvider {
     };
   }
 
-  /** Current MT5 server-clock epoch, used only by the chart's candle countdown. */
+  /** Vela receives UTC timestamps, so its current-time clock must also be UTC. */
   chartNow(): number {
-    if (this.serverClockOffsets.length === 0) {
-      for (const state of this.states.values()) {
-        for (const series of state.series.values()) {
-          const last = series.last();
-          if (last && last.time > 0) {
-            const approxOffset = last.time - Date.now();
-            if (Number.isFinite(approxOffset) && Math.abs(approxOffset) <= 24 * 60 * 60 * 1_000) {
-              const roundedOffset = Math.round(approxOffset / (15 * 60 * 1000)) * (15 * 60 * 1000);
-              return Date.now() + roundedOffset;
-            }
-          }
-        }
-      }
-      return Date.now();
-    }
-    const sorted = [...this.serverClockOffsets].sort((a, b) => a - b);
-    return Date.now() + sorted[Math.floor(sorted.length / 2)];
+    return Date.now();
   }
 
   async getBars(ticker: string, timeframe: string, range: BarRange = {}): Promise<OHLCV[]> {
     try {
       const plan = planTimeframe(timeframe);
-      const series = this.seriesFor(cleanTicker(ticker), plan.native);
+      const symbol = cleanTicker(ticker);
+      const series = this.seriesFor(symbol, plan.native);
       const now = Date.now();
+      const effectiveNow = now;
 
       // How many target bars does this request need?
       let want: number;
       if (range.from != null) {
-        const end = Math.min(range.to ?? now, now);
-        const span = Math.max(0, Math.ceil((end - range.from) / plan.ms)) + 3;
-        want = range.limit != null ? Math.min(range.limit, span) : span;
+        const end = Math.max(range.to ?? effectiveNow, effectiveNow);
+        const span = Math.max(0, Math.ceil((end - range.from) / plan.ms)) + 10;
+        want = range.limit != null ? Math.max(range.limit, span) : span;
       } else {
         want = range.limit ?? DEFAULT_BARS;
       }
       want = Math.max(2, Math.floor(want));
 
-      await series.ensure(want, plan.factor, range.to ?? Number.POSITIVE_INFINITY);
-      if (range.to == null || range.to >= now - plan.ms) await series.refreshIfStale(STALE_TAIL_MS);
+      const initialOffset = this.serverUtcOffset(symbol, series);
+      const rawTo = (range.to ?? effectiveNow) + initialOffset;
+      await series.ensure(want, plan.factor, rawTo);
+      if (range.to == null || range.to >= effectiveNow - plan.ms) await series.refreshIfStale(STALE_TAIL_MS);
 
-      const bars = aggregateBars(series.bars, plan, !series.genesis);
-      return rangeBars(bars, range);
+      const serverOffset = this.serverUtcOffset(symbol, series);
+      const utcBars = series.bars.map((bar) => ({ ...bar, time: bar.time - serverOffset }));
+      const bars = aggregateBars(utcBars, plan, !series.genesis);
+      return rangeBars(bars, range, now);
     } catch (error) {
       this.report(error);
       throw error;
@@ -556,7 +579,7 @@ export class Mt5VelaProvider implements DataProvider {
       prefix: "MT5",
       root: symbol,
       timezone: "Etc/UTC",
-      session: "24x7",
+      session: "0000-2400",
       mintick: 10 ** -d,
       pricescale: 10 ** d,
       minmove: 1,
@@ -650,19 +673,50 @@ export class Mt5VelaProvider implements DataProvider {
       this.serverClockOffsets.push(offset);
       if (this.serverClockOffsets.length > SERVER_CLOCK_SAMPLE_COUNT) this.serverClockOffsets.shift();
     }
+    const historyOffset = this.serverUtcOffset(state.symbol);
+    const tickOffset = this.observedTickOffset();
+    const barTime = tick.t + historyOffset - tickOffset;
     for (const series of state.series.values()) {
-      if (series.applyTick(tick.p, tick.t, tick.v)) this.fanOut(state, series);
+      if (series.applyTick(tick.p, barTime, tick.v)) this.fanOut(state, series);
     }
   }
 
   private fanOut(state: SymbolState, series: NativeSeries): void {
-    const last = series.last();
-    if (!last) return;
+    if (!series.last()) return;
+    const serverOffset = this.serverUtcOffset(state.symbol, series);
     for (const sub of state.subs) {
       if (sub.plan.native !== series.native) continue;
-      const bar = sub.plan.factor === 1 ? last : aggregateTail(series.bars, sub.plan, last.time);
+      const bar = sub.plan.factor === 1
+        ? { ...series.last()!, time: series.last()!.time - serverOffset }
+        : aggregateUtcTail(series.bars, sub.plan, serverOffset);
       if (bar) this.push(sub, bar);
     }
+  }
+
+  private serverUtcOffset(symbol: string, fallbackSeries?: NativeSeries): number {
+    const roundOffset = (offset: number) => Math.round(offset / (15 * 60 * 1000)) * (15 * 60 * 1000);
+    const minuteSeries = this.states.get(symbol)?.series.get("M1");
+    const latest = minuteSeries?.last() ?? (fallbackSeries?.native === "M1" ? fallbackSeries.last() : undefined);
+    if (latest) {
+      const rawOffset = latest.time - Date.now();
+      const roundedOffset = roundOffset(rawOffset);
+      const barAge = roundedOffset - rawOffset;
+      if (
+        Number.isFinite(rawOffset) &&
+        Math.abs(roundedOffset) <= 24 * 60 * 60 * 1000 &&
+        Math.abs(barAge) <= 3 * 60 * 1000
+      ) {
+        return roundedOffset;
+      }
+    }
+
+    return this.observedTickOffset();
+  }
+
+  private observedTickOffset(): number {
+    if (this.serverClockOffsets.length === 0) return 0;
+    const sorted = [...this.serverClockOffsets].sort((a, b) => a - b);
+    return Math.round(sorted[Math.floor(sorted.length / 2)] / (15 * 60 * 1000)) * (15 * 60 * 1000);
   }
 
   private async heal(state: SymbolState): Promise<void> {

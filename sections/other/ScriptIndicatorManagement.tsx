@@ -32,6 +32,7 @@ import {
   RotateCcw,
   Filter,
 } from "lucide-react";
+import { parseTimeframe } from "../../components/user/mt5Timeframes";
 
 export interface ScriptIndicatorItem {
   id: string;
@@ -106,7 +107,7 @@ const SUPPORTED_TIMEFRAMES = [
   { value: "1", minutes: 1 }, { value: "2", minutes: 2 }, { value: "3", minutes: 3 },
   { value: "4", minutes: 4 }, { value: "5", minutes: 5 }, { value: "6", minutes: 6 },
   { value: "10", minutes: 10 }, { value: "12", minutes: 12 }, { value: "15", minutes: 15 },
-  { value: "30", minutes: 30 }, { value: "60", minutes: 60 }, { value: "120", minutes: 120 },
+  { value: "30", minutes: 30 }, { value: "45", minutes: 45 }, { value: "60", minutes: 60 }, { value: "120", minutes: 120 },
   { value: "180", minutes: 180 }, { value: "240", minutes: 240 }, { value: "360", minutes: 360 },
   { value: "480", minutes: 480 }, { value: "720", minutes: 720 }, { value: "1D", minutes: 1440 },
   { value: "1W", minutes: 10080 }, { value: "1M", minutes: 43200 },
@@ -156,8 +157,8 @@ function verifyPineScript(source: string) {
       valueStart = match.index + match[0].lastIndexOf(quotedValue) + 1;
     }
     const line = source.slice(0, valueStart).split(/\r?\n/).length;
-    const normalized = raw.toUpperCase();
-    if (SUPPORTED_TIMEFRAMES.some((item) => item.value === normalized)) continue;
+    const timeframe = parseTimeframe(raw);
+    if (timeframe && timeframe.kind !== "sec") continue;
     const minutes = /^\d+$/.test(raw) ? Number(raw) :
       /^\d+S$/i.test(raw) ? Number(raw.slice(0, -1)) / 60 :
       /^\d+D$/i.test(raw) ? Number(raw.slice(0, -1)) * 1440 :
